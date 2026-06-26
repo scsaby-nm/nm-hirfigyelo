@@ -1,0 +1,88 @@
+name: Audio hotfix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch audio playback
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const p = 'src/worker.mjs';
+          let c = fs.readFileSync(p, 'utf8');
+
+          c = c.replace(
+            'const VERSION = "8.12.10 – Header + audio + admin javítás";',
+            'const VERSION = "8.12.11 – iPhone audio range hotfix";'
+          );
+
+          c = c.replace(
+`  if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
+    const assetResponse = await env.ASSETS.fetch(request);
+    const headers = new Headers(assetResponse.headers);
+    headers.set("Content-Type", headers.get("Content-Type") || "audio/mpeg");
+    headers.set("Accept-Ranges", "bytes");
+    return new Response(assetResponse.body, { status: assetResponse.status, headers });
+  }`,
+`  if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
+    try {
+      const assetResponse = await env.ASSETS.fetch(request);
+      if (!assetResponse.ok) {
+        return new Response("A hangfájl nem található.", {
+          status: assetResponse.status,
+          headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "no-store" }
+        });
+      }
+
+      const buffer = await assetResponse.arrayBuffer();
+      const size = buffer.byteLength;
+      const range = parseRangeHeader(request.headers.get("Range"), size);
+      const headers = new Headers();
+      headers.set("Content-Type", "audio/mpeg");
+      headers.set("Accept-Ranges", "bytes");
+      headers.set("Cache-Control", "public, max-age=31536000");
+
+      if (range && size > 0) {
+        const chunk = buffer.slice(range.start, range.end + 1);
+        headers.set("Content-Range", \`bytes \${range.start}-\${range.end}/\${size}\`);
+        headers.set("Content-Length", String(chunk.byteLength));
+        return new Response(request.method === "HEAD" ? null : chunk, { status: 206, headers });
+      }
+
+      headers.set("Content-Length", String(size));
+      return new Response(request.method === "HEAD" ? null : buffer, { status: 200, headers });
+    } catch (error) {
+      console.error("Asset audio read error", error);
+    }
+  }`
+          );
+
+          c = c.replaceAll(
+            'return new Response(object.body, { status: 206, headers });',
+            'return new Response(request.method === "HEAD" ? null : object.body, { status: 206, headers });'
+          );
+
+          c = c.replaceAll(
+            'return new Response(object.body, { status: 200, headers });',
+            'return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });'
+          );
+
+          fs.writeFileSync(p, c);
+          NODE
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/worker.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix audio playback on iPhone"
+          git push
