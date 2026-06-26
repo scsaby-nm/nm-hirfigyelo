@@ -1,0 +1,2735 @@
+﻿const VERSION = "9.1.0 – Fejlesztés alatt/Publikus teszt";
+const PUBLIC_ORIGIN = "https://nemzetiminimumok.hu";
+const EDITOR_USERNAME = "admin";
+
+
+const CATEGORIES = [
+  {
+    name: "🇭🇺 Belföld",
+    sources: [
+      { name: "Telex", url: "https://telex.hu/rss", weight: 12 },
+      { name: "HVG", url: "https://hvg.hu/rss", weight: 12 },
+      { name: "24.hu", url: "https://24.hu/feed", weight: 10 },
+      { name: "Magyar Hang", url: "https://hang.hu/rss", weight: 10 },
+      { name: "Mérce", url: "https://merce.hu/feed/", weight: 9 },
+      { name: "Népszava", url: "https://nepszava.hu/rss", weight: 10 }
+    ]
+  },
+  {
+    name: "🌍 Külföld",
+    sources: [
+      { name: "444", url: "https://444.hu/feed", weight: 11 },
+      { name: "Válasz Online", url: "https://www.valaszonline.hu/feed/", weight: 12 },
+      { name: "Euronews magyar", url: "https://hu.euronews.com/rss?format=mrss", weight: 10 },
+      { name: "Qubit", url: "https://qubit.hu/feed", weight: 10 }
+    ]
+  },
+  {
+    name: "💰 Gazdaság",
+    sources: [
+      { name: "Portfolio", url: "https://www.portfolio.hu/rss/all.xml", weight: 13 },
+      { name: "G7", url: "https://g7.hu/feed/", weight: 13 },
+      { name: "Mfor", url: "https://mfor.hu/rss", weight: 11 },
+      { name: "Pénzcentrum", url: "https://www.penzcentrum.hu/rss", weight: 10 }
+    ]
+  },
+  {
+    name: "🔎 Tényfeltárás",
+    sources: [
+      { name: "Direkt36", url: "https://www.direkt36.hu/feed/", weight: 18, investigative: true },
+      { name: "Átlátszó", url: "https://atlatszo.hu/feed/", weight: 18, investigative: true },
+      { name: "Lakmusz", url: "https://www.lakmusz.hu/feed/", weight: 16, investigative: true },
+      { name: "K-Monitor", url: "https://k.blog.hu/rss", weight: 16, investigative: true }
+    ]
+  }
+];
+
+const NAV_CATEGORIES = CATEGORIES.filter((category) => !category.name.includes("Tényfeltárás"));
+
+const PRIORITY_KEYWORDS = [
+  "magyar péter", "orbán viktor", "tisza", "tisza párt", "toroczkai lászló", "mi hazánk", "brüsszel", "üzemanyagár",
+  "kormány", "parlament", "alkotmánybíróság", "bíróság", "ügyészség", "rendőrség",
+  "nyomozás", "eu", "európai unió", "választás", "népszavazás", "közpénz", "korrupció",
+  "adó", "infláció", "gazdaság", "nav", "mtva", "közmédia", "egészségügy", "oktatás",
+  "nyugdíj", "minisztérium", "állam", "önkormányzat", "közszolgáltatás", "vasút", "máv",
+  "kórház", "iskola", "tanár", "orvos", "szociális", "lakhatás", "árak", "rezsi",
+  "gyermekvédelem", "börtön", "per", "ítélet", "törvény", "jogállam", "energia",
+  "mol", "forint", "költségvetés", "szegénység", "család", "munkahely"
+];
+
+const CIKK10_KEYWORDS = [
+  "magyar péter", "orbán viktor", "tisza", "tisza párt", "toroczkai lászló", "mi hazánk", "brüsszel", "üzemanyagár",
+  "alkotmánybíróság", "közmédia", "nav", "ügyészség", "választás", "korrupció",
+  "közpénz", "egészségügy", "oktatás", "nyugdíj", "rendőrség", "bíróság", "parlament",
+  "kormány", "minisztérium", "adó", "infláció", "lakhatás", "szociális",
+  "gyermekvédelem", "állami", "önkormányzat", "jogállam", "kórház", "iskola",
+  "tanár", "orvos", "máv", "vasút", "rezsi", "árak"
+];
+
+const SOCIAL_IMPACT_RULES = [
+  {
+    weight: 12,
+    keywords: ["egészségügy", "kórház", "oktatás", "iskola", "vasút", "máv", "közszolgáltatás", "lakhatás"]
+  },
+  {
+    weight: 9,
+    keywords: ["nyugdíjas", "gyermek", "család", "tanár", "orvos", "dolgozó", "munkavállaló", "szegénység"]
+  },
+  {
+    weight: 7,
+    keywords: ["áremelés", "infláció", "rezsi", "adó", "elbocsátás", "bezárás", "hiány", "válság"]
+  },
+  {
+    weight: 5,
+    keywords: ["országos", "tömeges", "millió", "milliárd", "közpénz", "alapjog", "jogállam"]
+  }
+];
+
+export default {
+  async fetch(request, env) {
+    const pageUrl = new URL(request.url);
+    const db = env && env.DB ? env.DB : null;
+
+    if (pageUrl.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(pageUrl.hostname)) {
+      pageUrl.protocol = "https:";
+      return Response.redirect(pageUrl.toString(), 308);
+    }
+
+    if (pageUrl.hostname === "www.nemzetiminimumok.hu") {
+      return Response.redirect(`${PUBLIC_ORIGIN}${pageUrl.pathname}${pageUrl.search}`, 308);
+    }
+    if (pageUrl.pathname === "/robots.txt") return renderRobotsTxt();
+    if (pageUrl.pathname === "/sitemap.xml") return renderSitemapXml();
+    if (pageUrl.pathname === "/manifest.webmanifest") return renderWebManifest();
+    if (pageUrl.pathname === "/health") return renderHealthCheck();
+
+    if (requiresEditorAuth(pageUrl)) {
+      const authFailure = checkEditorAuth(request, env);
+      if (authFailure) return authFailure;
+    }
+
+    if (pageUrl.pathname === "/api/counter") return renderCounterApi(db);
+    if (pageUrl.pathname === "/api/stats") return renderStatsApi(db);
+    if (pageUrl.pathname === "/api/translate") return handleTranslationApi(request, env);
+    if (pageUrl.pathname === "/api/push/public-key") return renderPushPublicKey(env);
+    if (pageUrl.pathname === "/api/push/subscribe") return handlePushSubscription(request, env);
+    if (pageUrl.pathname === "/api/editor/push/outbox") return renderPushOutboxApi(request, env);
+    if (pageUrl.pathname === "/api/editor/hidden") return handleHiddenArticlesApi(request, env);
+    if (pageUrl.pathname === "/api/editor/articles") return handleEditorArticlesApi(request, env);
+    if (pageUrl.pathname === "/sw.js") return renderServiceWorker();
+    if (pageUrl.pathname === "/go") return handleArticleRedirect(pageUrl, db);
+    if (pageUrl.pathname === "/article") return renderArticlePage(pageUrl, db, env);
+    if (pageUrl.pathname === "/nm-image") return renderNmArticleImage(pageUrl, db);
+    if (pageUrl.pathname === "/nm-cikk") return renderNmArticlePage(pageUrl, db);
+    if (pageUrl.pathname === "/hangoscikkek") return renderAudioArticlesPage(pageUrl, db);
+    if (pageUrl.pathname === "/editor/publish") return renderPublishArticlePage(pageUrl, db);
+    if (pageUrl.pathname === "/prompt") {
+      await safeLogEvent(db, "page_view");
+      return renderPromptPage(pageUrl);
+    }
+    if (pageUrl.pathname === "/" || pageUrl.pathname === "/editor") return renderHomePage(pageUrl, db);
+    return renderNotFound();
+  }
+};
+
+function requiresEditorAuth(pageUrl) {
+  return pageUrl.pathname === "/editor" ||
+    pageUrl.pathname === "/editor/publish" ||
+    pageUrl.pathname === "/api/editor/push/outbox" ||
+    pageUrl.pathname === "/api/editor/hidden" ||
+    pageUrl.pathname === "/api/editor/articles" ||
+    pageUrl.pathname === "/prompt" ||
+    pageUrl.pathname === "/api/stats" ||
+    pageUrl.searchParams.get("view") === "editor";
+}
+
+function checkEditorAuth(request, env = {}) {
+  const username = env.EDITOR_USERNAME || EDITOR_USERNAME;
+  const password = env.EDITOR_PASSWORD || "";
+  if (!password) {
+    return new Response("Az admin jelszó nincs beállítva a Worker Secrets között.", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "no-store" }
+    });
+  }
+
+  const expected = `Basic ${btoa(`${username}:${password}`)}`;
+  const received = request.headers.get("Authorization") || "";
+  if (received === expected) return null;
+
+  return new Response("Admin hozzáféréshez bejelentkezés szükséges.", {
+    status: 401,
+    headers: {
+      "Content-Type": "text/plain; charset=UTF-8",
+      "Cache-Control": "no-store",
+      "WWW-Authenticate": 'Basic realm="NM Admin", charset="UTF-8"',
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+async function cachedFetch(url, ttlSeconds, options = {}) {
+  const cache = typeof caches !== "undefined" && caches.default ? caches.default : null;
+  const cacheKey = new Request(String(url), { method: "GET" });
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
+
+  const response = await fetch(url, options);
+  if (cache && response.ok) {
+    const copy = response.clone();
+    const headers = new Headers(copy.headers);
+    headers.set("Cache-Control", `public, max-age=${ttlSeconds}`);
+    await cache.put(cacheKey, new Response(copy.body, {
+      status: copy.status,
+      statusText: copy.statusText,
+      headers
+    }));
+  }
+  return response;
+}
+
+async function incrementHomeView(db) {
+  if (!db) return null;
+  try {
+    const increment = db.prepare("INSERT INTO counters (name, value) VALUES ('site_views', 1) ON CONFLICT(name) DO UPDATE SET value = value + 1");
+    const pageView = db.prepare("INSERT INTO analytics (event_type, article_id, visitor_id) VALUES ('page_view', NULL, NULL)");
+    if (typeof db.batch === "function") await db.batch([increment, pageView]);
+    else {
+      await increment.run();
+      await pageView.run();
+    }
+    return await getSiteViews(db);
+  } catch (error) {
+    console.error("D1 site counter error", error);
+    return null;
+  }
+}
+
+async function getSiteViews(db) {
+  if (!db) return null;
+  try {
+    const row = await db.prepare("SELECT value FROM counters WHERE name = 'site_views'").first();
+    return row && Number.isFinite(Number(row.value)) ? Number(row.value) : 0;
+  } catch (error) {
+    console.error("D1 counter read error", error);
+    return null;
+  }
+}
+
+async function safeLogEvent(db, eventType, articleId = null) {
+  if (!db) return false;
+  try {
+    await db.prepare("INSERT INTO analytics (event_type, article_id, visitor_id) VALUES (?, ?, NULL)")
+      .bind(String(eventType), articleId == null ? null : String(articleId).slice(0, 2048))
+      .run();
+    return true;
+  } catch (error) {
+    console.error("D1 analytics error", error);
+    return false;
+  }
+}
+
+async function getStats(db) {
+  const unavailable = { totalViews: null, todayViews: null, searches: null, articleClicks: null, articleViews: null };
+  if (!db) return unavailable;
+  try {
+    const totalViews = await getSiteViews(db);
+    const rows = await db.prepare(`SELECT
+      SUM(CASE WHEN event_type = 'page_view' AND date(created_at) = date('now') THEN 1 ELSE 0 END) AS today_views,
+      SUM(CASE WHEN event_type = 'search' THEN 1 ELSE 0 END) AS searches,
+      SUM(CASE WHEN event_type = 'article_click' THEN 1 ELSE 0 END) AS article_clicks,
+      SUM(CASE WHEN event_type = 'article_view' THEN 1 ELSE 0 END) AS article_views
+      FROM analytics`).first();
+    return {
+      totalViews,
+      todayViews: Number(rows?.today_views || 0),
+      searches: Number(rows?.searches || 0),
+      articleClicks: Number(rows?.article_clicks || 0),
+      articleViews: Number(rows?.article_views || 0)
+    };
+  } catch (error) {
+    console.error("D1 stats error", error);
+    return unavailable;
+  }
+}
+
+async function getTopArticleViews(db) {
+  if (!db) return [];
+  try {
+    const result = await db.prepare(`SELECT article_id, COUNT(*) AS clicks
+      FROM analytics
+      WHERE event_type = 'article_view'
+        AND created_at >= datetime('now', '-7 days')
+        AND article_id IS NOT NULL
+      GROUP BY article_id
+      ORDER BY clicks DESC
+      LIMIT 500`).all();
+    return Array.isArray(result?.results) ? result.results : [];
+  } catch (error) {
+    console.error("D1 top articles error", error);
+    return [];
+  }
+}
+
+async function getArticleViewCount(db, articleId) {
+  if (!db || !articleId) return null;
+  try {
+    const row = await db.prepare("SELECT COUNT(*) AS views FROM analytics WHERE event_type = 'article_view' AND article_id = ?")
+      .bind(String(articleId).slice(0, 2048))
+      .first();
+    return Number(row?.views || 0);
+  } catch (error) {
+    console.error("D1 article view count error", error);
+    return null;
+  }
+}
+
+function matchTopNews(rows, items) {
+  const byLink = new Map(items.map((item) => [rssArticleId(item), item]));
+  return rows.map((row) => {
+    const item = byLink.get(String(row.article_id || ""));
+    return item ? { ...item, clickCount: Number(row.clicks || 0) } : null;
+  }).filter(Boolean).slice(0, 5);
+}
+
+async function renderCounterApi(db) {
+  return jsonResponse({ views: await getSiteViews(db) });
+}
+
+async function renderStatsApi(db) {
+  return jsonResponse(await getStats(db));
+}
+
+function renderPushPublicKey(env = {}) {
+  const publicKey = String(env.VAPID_PUBLIC_KEY || "").trim();
+  return jsonResponse({ publicKey, configured: Boolean(publicKey) }, publicKey ? 200 : 503);
+}
+
+async function renderPushOutboxApi(request, env = {}) {
+  if (request.method !== "GET") return jsonResponse({ error: "Csak GET kérés engedélyezett." }, 405);
+  if (!env.DB) return jsonResponse({ error: "A D1 adatbázis nem érhető el." }, 503);
+  try {
+    const [outbox, subscribers] = await Promise.all([
+      env.DB.prepare(`SELECT id, article_slug, title, body, url, status, created_at, sent_at
+        FROM push_outbox ORDER BY created_at DESC LIMIT 50`).all(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").first()
+    ]);
+    return jsonResponse({
+      subscriberCount: Number(subscribers?.count || 0),
+      items: Array.isArray(outbox?.results) ? outbox.results : []
+    });
+  } catch (error) {
+    console.error("Push outbox read error", error);
+    return jsonResponse({ error: "Az értesítési várólista nem olvasható. Futtasd a 0004-es D1 migrációt." }, 503);
+  }
+}
+
+async function handlePushSubscription(request, env = {}) {
+  if (!['POST', 'DELETE'].includes(request.method)) {
+    return jsonResponse({ error: "A feliratkozási végpont csak POST vagy DELETE kérést fogad." }, 405);
+  }
+  if (!env.DB) return jsonResponse({ error: "Az értesítési adatbázis nem érhető el." }, 503);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Érvénytelen feliratkozási kérés." }, 400);
+  }
+  const endpoint = String(body?.endpoint || "").trim();
+  if (request.method === "DELETE") {
+    if (!endpoint.startsWith("https://")) return jsonResponse({ error: "Hiányos leiratkozási kérés." }, 400);
+    try {
+      await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint.slice(0, 2048)).run();
+      return jsonResponse({ ok: true });
+    } catch (error) {
+      console.error("Push unsubscribe error", error);
+      return jsonResponse({ error: "A leiratkozás mentése nem sikerült." }, 500);
+    }
+  }
+  const p256dh = String(body?.keys?.p256dh || "").trim();
+  const auth = String(body?.keys?.auth || "").trim();
+  if (!endpoint.startsWith("https://") || !p256dh || !auth) {
+    return jsonResponse({ error: "Hiányos push-feliratkozás." }, 400);
+  }
+  try {
+    await env.DB.prepare(`INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,
+      user_agent = excluded.user_agent, updated_at = CURRENT_TIMESTAMP`)
+      .bind(endpoint.slice(0, 2048), p256dh.slice(0, 512), auth.slice(0, 512), String(request.headers.get("User-Agent") || "").slice(0, 512))
+      .run();
+    return jsonResponse({ ok: true });
+  } catch (error) {
+    console.error("Push subscription error", error);
+    return jsonResponse({ error: "A feliratkozás mentése nem sikerült." }, 500);
+  }
+}
+
+function renderServiceWorker() {
+  const script = `self.addEventListener("push",event=>{let data={};try{data=event.data?event.data.json():{}}catch(error){};event.waitUntil(self.registration.showNotification(data.title||"Nemzeti Minimumok",{body:data.body||"Új fontos hír érkezett.",icon:"/favicon.jpg",badge:"/favicon.jpg",data:{url:data.url||"/"}}))});self.addEventListener("notificationclick",event=>{event.notification.close();event.waitUntil(clients.openWindow(event.notification.data?.url||"/"))});`;
+  return new Response(script, {
+    headers: {
+      "Content-Type": "application/javascript; charset=UTF-8",
+      "Cache-Control": "no-cache",
+      "Service-Worker-Allowed": "/"
+    }
+  });
+}
+
+function renderWebManifest() {
+  return new Response(JSON.stringify({
+    name: "Nemzeti Minimumok Hírfigyelő",
+    short_name: "NM Hírfigyelő",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    background_color: "#0b0b0c",
+    theme_color: "#111111",
+    lang: "hu",
+    icons: [
+      { src: "/favicon.jpg", sizes: "512x512", type: "image/jpeg", purpose: "any maskable" }
+    ]
+  }), {
+    headers: { "Content-Type": "application/manifest+json; charset=UTF-8", "Cache-Control": "public, max-age=3600" }
+  });
+}
+
+async function getPublishedNmArticles(db, limit = 12) {
+  if (!db) return [];
+  try {
+    const result = await db.prepare(`SELECT slug, title, lead, body, image_url, category, created_at
+      FROM nm_articles WHERE status = 'published' ORDER BY created_at DESC LIMIT ?`)
+      .bind(Math.max(1, Math.min(Number(limit) || 12, 20)))
+      .all();
+    return Array.isArray(result?.results) ? result.results : [];
+  } catch (error) {
+    console.error("NM articles read error", error);
+    return [];
+  }
+}
+
+async function getHiddenArticleIds(db) {
+  if (!db) return [];
+  try {
+    const result = await db.prepare("SELECT article_id FROM hidden_articles").all();
+    return (Array.isArray(result?.results) ? result.results : [])
+      .map((row) => String(row.article_id || ""))
+      .filter(Boolean);
+  } catch (error) {
+    console.error("Hidden articles read error", error);
+    return [];
+  }
+}
+
+function articleIdentity(item) {
+  return String(item?.link || item?.title || "").slice(0, 2048);
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function rssArticleId(item) {
+  return hashString(`${item?.source || ""}|${articleIdentity(item)}`);
+}
+
+async function handleHiddenArticlesApi(request, env = {}) {
+  if (request.method !== "POST") return jsonResponse({ error: "Csak POST kérés engedélyezett." }, 405);
+  if (!env.DB) return jsonResponse({ error: "A D1 adatbázis nem érhető el." }, 503);
+  let body;
+  try { body = await request.json(); } catch { return jsonResponse({ error: "Érvénytelen kérés." }, 400); }
+  const articleId = String(body?.articleId || "").trim().slice(0, 2048);
+  const title = String(body?.title || "").trim().slice(0, 500);
+  if (!articleId) return jsonResponse({ error: "Hiányzó cikkazonosító." }, 400);
+  try {
+    await env.DB.prepare(`INSERT INTO hidden_articles (article_id, title, created_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(article_id) DO UPDATE SET title = excluded.title, created_at = CURRENT_TIMESTAMP`)
+      .bind(articleId, title)
+      .run();
+    return jsonResponse({ ok: true });
+  } catch (error) {
+    console.error("Hide article error", error);
+    return jsonResponse({ error: "A cikk elrejtése nem sikerült. Futtasd az 0005-ös D1 migrációt." }, 500);
+  }
+}
+
+function slugifyNmArticle(title) {
+  const base = String(title || "nm-cikk").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42) || "nm-cikk";
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+async function handleEditorArticlesApi(request, env = {}) {
+  if (request.method === "DELETE") {
+    if (!env.DB) return jsonResponse({ error: "A D1 adatbazis nem erheto el." }, 503);
+    let deleteBody;
+    try { deleteBody = await request.json(); } catch { return jsonResponse({ error: "Ervenytelen keres." }, 400); }
+    const slug = String(deleteBody?.slug || "").trim().slice(0, 160);
+    if (!slug) return jsonResponse({ error: "Hianyzo cikkazonosito." }, 400);
+    try {
+      await env.DB.prepare("UPDATE nm_articles SET status = 'hidden', updated_at = CURRENT_TIMESTAMP WHERE slug = ?")
+        .bind(slug)
+        .run();
+      return jsonResponse({ ok: true });
+    } catch (error) {
+      console.error("NM article delete/hide error", error);
+      return jsonResponse({ error: "A sajat cikk elrejtese nem sikerult." }, 500);
+    }
+  }
+  if (request.method === "PUT") {
+    if (!env.DB) return jsonResponse({ error: "A D1 adatbázis nem érhető el." }, 503);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "Érvénytelen kérés." }, 400); }
+    const slug = String(body?.slug || "").trim().slice(0, 160);
+    const title = String(body?.title || "").trim().slice(0, 240);
+    const articleBody = String(body?.body || "").trim().slice(0, 30000);
+    const lead = String(body?.lead || articleBody.slice(0, 320)).trim().slice(0, 500);
+    const imageUrl = normalizeArticleImageInput(body?.imageUrl);
+    const category = String(body?.category || "Közélet").trim().slice(0, 80);
+    const sourceUrl = safeExternalUrl(body?.sourceUrl);
+    const audio = parseAudioFields(body);
+    if (!slug) return jsonResponse({ error: "Hiányzó cikkazonosító." }, 400);
+    if (!title || articleBody.length < 80) return jsonResponse({ error: "A cím és legalább 80 karakteres cikkszöveg kötelező." }, 400);
+    try {
+      await env.DB.prepare(`UPDATE nm_articles
+        SET title = ?, lead = ?, body = ?, image_url = ?, category = ?, source_url = ?,
+            audio_enabled = ?, audio_url = ?, audio_duration = ?, audio_summary = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE slug = ? AND status = 'published'`)
+        .bind(title, lead, articleBody, imageUrl, category, sourceUrl, audio.enabled, audio.url, audio.duration, audio.summary, slug)
+        .run();
+      return jsonResponse({ ok: true, slug, url: makeInternalUrl("/nm-cikk", { slug }) });
+    } catch (error) {
+      console.error("NM article update error", error);
+      return jsonResponse({ error: "A saját cikk mentése nem sikerült." }, 500);
+    }
+  }
+  if (request.method !== "POST") return jsonResponse({ error: "Csak POST kérés engedélyezett." }, 405);
+  if (!env.DB) return jsonResponse({ error: "A D1 adatbázis nem érhető el." }, 503);
+  let body;
+  try { body = await request.json(); } catch { return jsonResponse({ error: "Érvénytelen kérés." }, 400); }
+  const title = String(body?.title || "").trim().slice(0, 240);
+  const articleBody = String(body?.body || "").trim().slice(0, 30000);
+  const lead = String(body?.lead || articleBody.slice(0, 320)).trim().slice(0, 500);
+  const imageUrl = normalizeArticleImageInput(body?.imageUrl);
+  const category = String(body?.category || "Közélet").trim().slice(0, 80);
+  const sourceUrl = safeExternalUrl(body?.sourceUrl);
+  const audio = parseAudioFields(body);
+  const notifySubscribers = body?.notifySubscribers === true || body?.notifySubscribers === "on";
+  if (!title || articleBody.length < 80) return jsonResponse({ error: "A cím és legalább 80 karakteres cikkszöveg kötelező." }, 400);
+  const slug = slugifyNmArticle(title);
+  try {
+    await env.DB.prepare(`INSERT INTO nm_articles
+      (slug, title, lead, body, image_url, category, source_url, audio_enabled, audio_url, audio_duration, audio_summary, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+      .bind(slug, title, lead, articleBody, imageUrl, category, sourceUrl, audio.enabled, audio.url, audio.duration, audio.summary)
+      .run();
+    const articleUrl = makeInternalUrl("/nm-cikk", { slug });
+    let notificationQueued = false;
+    let notificationWarning = "";
+    if (notifySubscribers) {
+      try {
+        await env.DB.prepare(`INSERT INTO push_outbox
+          (article_slug, title, body, url, status, created_at)
+          VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)`)
+          .bind(slug, title, shorten(lead || articleBody, 180), articleUrl)
+          .run();
+        notificationQueued = true;
+      } catch (error) {
+        console.error("Push queue insert error", error);
+        notificationWarning = "A cikk megjelent, de az értesítés nem került várólistára. Futtasd a 0004-es D1 migrációt.";
+      }
+    }
+    return jsonResponse({ ok: true, slug, url: articleUrl, notificationQueued, notificationWarning });
+  } catch (error) {
+    console.error("NM article publish error", error);
+    return jsonResponse({ error: "A cikk publikálása nem sikerült." }, 500);
+  }
+}
+
+function parseAudioFields(body = {}) {
+  const enabled = body?.audio_enabled === true || body?.audio_enabled === "on" || body?.audio_enabled === "1" ? 1 : 0;
+  const url = safeExternalUrl(body?.audio_url);
+  return {
+    enabled: enabled && url ? 1 : 0,
+    url,
+    duration: String(body?.audio_duration || "").trim().slice(0, 40),
+    summary: String(body?.audio_summary || "").trim().slice(0, 700)
+  };
+}
+
+function renderPublishArticlePageOld(pageUrl) {
+  const title = pageUrl.searchParams.get("title") || "";
+  const body = pageUrl.searchParams.get("body") || "";
+  const sourceUrl = safeExternalUrl(pageUrl.searchParams.get("sourceUrl"));
+  return htmlResponse(`<!DOCTYPE html><html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Saját NM cikk publikálása</title><style>${NM_HEADER_HARD_FIX_CSS}${PROMPT_CSS}.publish-form{display:grid;gap:12px}.publish-form input,.publish-form select,.publish-form textarea{width:100%;box-sizing:border-box;padding:12px;border:1px solid #444;border-radius:10px;background:#111;color:#fff;font:inherit}.publish-form textarea{height:420px}.notify-option{display:flex;align-items:center;gap:9px;color:#ddd}.notify-option input{width:auto}.publish-status{color:#ff9a9a}</style></head><body><a href="/editor" style="color:#ddd">← Admin</a><h1>✍️ Saját NM cikk publikálása</h1><form id="publishForm" class="box publish-form"><input name="title" value="${escapeHtml(title)}" placeholder="Cikk címe" required><input name="lead" placeholder="Rövid bevezető"><select name="category"><option>Közélet</option><option>Gazdaság</option><option>Külföld</option><option>Tényfeltárás</option><option>Vélemény</option></select><input name="imageUrl" placeholder="Kép HTTPS URL-je"><input name="sourceUrl" value="${escapeHtml(sourceUrl)}" placeholder="Kapcsolódó forrás URL-je"><textarea name="body" placeholder="A teljes Nemzeti Minimumok cikk" required>${escapeHtml(body)}</textarea><label class="notify-option"><input type="checkbox" name="notifySubscribers" checked> 🔔 Értesítési feladat létrehozása a feliratkozóknak</label><button class="btn" type="submit">📰 Publikálás</button><div id="publishStatus" class="publish-status"></div></form><script>document.getElementById("publishForm").addEventListener("submit",async event=>{event.preventDefault();const form=event.currentTarget;const status=document.getElementById("publishStatus");const button=form.querySelector("button");button.disabled=true;status.textContent="Publikálás…";try{const payload=Object.fromEntries(new FormData(form).entries());const response=await fetch("/api/editor/articles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await response.json();if(!response.ok)throw new Error(data.error||"Sikertelen publikálás");if(data.notificationWarning)alert(data.notificationWarning);location.href=data.url}catch(error){status.textContent=error.message||"Sikertelen publikálás";button.disabled=false}});</script></body></html>`);
+}
+
+async function renderPublishArticlePage(pageUrl, db) {
+  const editSlug = String(pageUrl.searchParams.get("slug") || "").trim().slice(0, 160);
+  let existingArticle = null;
+  if (editSlug && db) {
+    try {
+      existingArticle = await db.prepare("SELECT * FROM nm_articles WHERE slug = ? AND status = 'published'")
+        .bind(editSlug)
+        .first();
+    } catch (error) {
+      console.error("NM article edit read error", error);
+    }
+  }
+  const title = pageUrl.searchParams.get("title") || "";
+  const body = pageUrl.searchParams.get("body") || "";
+  const sourceUrl = safeExternalUrl(pageUrl.searchParams.get("sourceUrl"));
+  const formTitle = existingArticle?.title || title;
+  const formLead = existingArticle?.lead || "";
+  const formBody = existingArticle?.body || body;
+  const formImageUrl = existingArticle?.image_url || "";
+  const formSourceUrl = existingArticle?.source_url || sourceUrl || "";
+  const formAudioEnabled = Number(existingArticle?.audio_enabled || 0) === 1;
+  const formAudioUrl = existingArticle?.audio_url || "";
+  const formAudioDuration = existingArticle?.audio_duration || "";
+  const formAudioSummary = existingArticle?.audio_summary || "";
+  const formCategory = existingArticle?.category || "Közélet";
+  const isEditing = Boolean(existingArticle);
+  const categoryOptions = ["Közélet", "Gazdaság", "Külföld", "Tényfeltárás", "Vélemény"]
+    .map((category) => `<option${category === formCategory ? " selected" : ""}>${escapeHtml(category)}</option>`)
+    .join("");
+  return htmlResponse(`<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>${isEditing ? "Saját NM cikk szerkesztése" : "Saját NM cikk publikálása"}</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("nm-theme")||"dark"}catch(error){document.documentElement.dataset.theme="dark"}</script>
+  <style>${NM_HEADER_HARD_FIX_CSS}
+    ${PROMPT_CSS}
+    ${HEADER_CSS}${BRAND_ASSET_CSS}${HEADER_FOOTER_843_CSS}${HEADER_REFINEMENT_871_CSS}${SITE_MENU_880_CSS}${THEME_SWITCH_853_CSS}${MENU_SECURITY_810_CSS}${UI_812_CSS}${UI_814_CSS}${UI_821_CSS}${UI_823_CSS}${UI_825_CSS}${UI_900_CSS}
+    .publish-form{display:grid;gap:12px}
+    .publish-form input,.publish-form select,.publish-form textarea{width:100%;box-sizing:border-box;padding:12px;border:1px solid #444;border-radius:10px;background:#111;color:#fff;font:inherit}
+    .publish-form textarea{height:420px}
+    .publish-form .audio-summary-input{height:120px}
+    .audio-editor-fields{display:grid;gap:10px;margin:6px 0 2px;padding:14px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.04)}
+    .audio-editor-fields legend{padding:0 8px;color:#ff9aa5;font-weight:900}
+    .notify-option{display:flex;align-items:center;gap:9px;color:#ddd}
+    .notify-option input{width:auto}
+    .publish-status{color:#ff9a9a}
+    .image-preview{display:none;max-width:220px;border-radius:12px;border:1px solid #444}
+  </style>
+</head>
+<body class="publish-page">
+  ${renderCompactHeader(true)}
+  <main class="publish-content">
+  <a href="/" style="color:#ddd;text-decoration:none">🏠 Főoldal</a>
+  <h1>${isEditing ? "✏️ Saját NM cikk szerkesztése" : "✍️ Saját NM cikk publikálása"}</h1>
+  <form id="publishForm" class="box publish-form">
+    <input type="hidden" name="slug" value="${escapeHtml(editSlug)}">
+    <input name="title" value="${escapeHtml(formTitle)}" placeholder="Cikk címe" required>
+    <input name="lead" value="${escapeHtml(formLead)}" placeholder="Rövid bevezető">
+    <select name="category">${categoryOptions}</select>
+    <input name="imageUrl" value="${escapeHtml(formImageUrl)}" placeholder="Kép HTTPS URL-je vagy csatolt kép">
+    <input id="imageFile" type="file" accept="image/*">
+    <img id="imagePreview" class="image-preview" src="${escapeHtml(formImageUrl)}" style="${formImageUrl ? "display:block" : ""}" alt="Kép előnézet">
+    <textarea name="body" placeholder="A teljes Nemzeti Minimumok cikk" required>${escapeHtml(formBody)}</textarea>
+    <input name="sourceUrl" value="${escapeHtml(formSourceUrl)}" placeholder="Videó beágyazás URL-je – Facebook / YouTube / TikTok (opcionális)">
+    <fieldset class="audio-editor-fields">
+      <legend>🎧 Hangoscikk</legend>
+      <label class="notify-option"><input type="checkbox" name="audio_enabled" id="audio_enabled"${formAudioEnabled ? " checked" : ""}> Hangoscikk engedélyezése</label>
+      <input type="url" name="audio_url" id="audio_url" value="${escapeHtml(formAudioUrl)}" placeholder="Hangoscikk MP3 URL – https://.../hangoscikk.mp3">
+      <input type="text" name="audio_duration" id="audio_duration" value="${escapeHtml(formAudioDuration)}" placeholder="Hanganyag hossza, pl. 04:32">
+      <textarea name="audio_summary" id="audio_summary" class="audio-summary-input" placeholder="1-2 mondatos ajánló a hanganyaghoz">${escapeHtml(formAudioSummary)}</textarea>
+    </fieldset>
+    ${isEditing ? "" : '<label class="notify-option"><input type="checkbox" name="notifySubscribers" checked> 🔔 Értesítési feladat létrehozása a feliratkozóknak</label>'}
+    <button class="btn" type="submit">${isEditing ? "💾 Mentés" : "📰 Publikálás"}</button>
+    <div id="publishStatus" class="publish-status"></div>
+  </form>
+  </main>
+  <script>
+    const isEditing = ${JSON.stringify(isEditing)};
+    async function resizeImage(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = () => {
+          img.onload = () => {
+            const max = 1100;
+            const scale = Math.min(1, max / Math.max(img.width, img.height));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", 0.78));
+          };
+          img.onerror = reject;
+          img.src = reader.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    document.getElementById("imageFile").addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const status = document.getElementById("publishStatus");
+      status.textContent = "Kép előkészítése…";
+      try {
+        const dataUrl = await resizeImage(file);
+        document.querySelector("[name=imageUrl]").value = dataUrl;
+        const preview = document.getElementById("imagePreview");
+        preview.src = dataUrl;
+        preview.style.display = "block";
+        status.textContent = "Kép csatolva.";
+      } catch (error) {
+        status.textContent = "A kép előkészítése nem sikerült.";
+      }
+    });
+    document.getElementById("publishForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const status = document.getElementById("publishStatus");
+      const button = form.querySelector("button");
+      button.disabled = true;
+      status.textContent = isEditing ? "Mentés…" : "Publikálás…";
+      try {
+        const payload = Object.fromEntries(new FormData(form).entries());
+        delete payload.imageFile;
+        const response = await fetch("/api/editor/articles", {
+          method: isEditing ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || (isEditing ? "Sikertelen mentés" : "Sikertelen publikálás"));
+        if (data.notificationWarning) alert(data.notificationWarning);
+        location.href = data.url;
+      } catch (error) {
+        status.textContent = error.message || (isEditing ? "Sikertelen mentés" : "Sikertelen publikálás");
+        button.disabled = false;
+      }
+    });
+    function updateThemeToggle(){const dark=document.documentElement.dataset.theme!=="light";document.querySelectorAll(".theme-slider").forEach(button=>{button.setAttribute("aria-checked",String(dark));button.setAttribute("aria-label",dark?"Sötét mód bekapcsolva":"Világos mód bekapcsolva")});document.querySelectorAll(".theme-control").forEach(control=>{control.dataset.mode=dark?"dark":"light"})}
+    function toggleTheme(){const next=document.documentElement.dataset.theme==="light"?"dark":"light";document.documentElement.dataset.theme=next;try{localStorage.setItem("nm-theme",next)}catch(error){}updateThemeToggle()}
+    updateThemeToggle();
+  </script>
+</body>
+</html>`);
+}
+
+async function renderNmArticlePage(pageUrl, db) {
+  const slug = String(pageUrl.searchParams.get("slug") || "").slice(0, 160);
+  if (!db || !slug) return renderNotFound();
+  const isEditor = pageUrl.searchParams.get("view") === "editor";
+  let article;
+  try {
+    article = await db.prepare("SELECT * FROM nm_articles WHERE slug = ? AND status = 'published'").bind(slug).first();
+  } catch { return renderNotFound(); }
+  if (!article) return renderNotFound();
+  const background = normalizeArticleImageInput(article.image_url) || topicFallbackImage(article.title, article.category, []);
+  const socialImage = `${PUBLIC_ORIGIN}${makeInternalUrl("/nm-image", { slug })}`;
+  const videoEmbed = renderVideoEmbed(article.source_url);
+  const audioBox = renderAudioBox(article);
+  const articleId = `nm:${slug}`;
+  await safeLogEvent(db, "page_view");
+  await safeLogEvent(db, "article_view", articleId);
+  const articleViewCount = await getArticleViewCount(db, articleId);
+  return htmlResponse(`<!DOCTYPE html><html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(article.title)}</title><meta name="description" content="${escapeHtml(shorten(article.lead || article.body,155))}"><meta property="og:type" content="article"><meta property="og:site_name" content="Nemzeti Minimumok"><meta property="og:title" content="${escapeHtml(article.title)}"><meta property="og:description" content="${escapeHtml(shorten(article.lead || article.body,180))}"><meta property="og:url" content="${escapeHtml(`${PUBLIC_ORIGIN}${makeInternalUrl("/nm-cikk", { slug })}`)}"><meta property="og:image" content="${escapeHtml(socialImage)}"><meta property="og:image:secure_url" content="${escapeHtml(socialImage)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(article.title)}"><meta name="twitter:description" content="${escapeHtml(shorten(article.lead || article.body,180))}"><meta name="twitter:image" content="${escapeHtml(socialImage)}"><link rel="icon" href="/favicon.jpg"><script>try{document.documentElement.dataset.theme=localStorage.getItem("nm-theme")||"dark"}catch(error){document.documentElement.dataset.theme="dark"}</script><style>${NM_HEADER_HARD_FIX_CSS}${ARTICLE_CSS}${ARTICLE_COUNTER_850_CSS}${HEADER_FOOTER_843_CSS}${LAYOUT_842_CSS}${ARTICLE_THEME_870_CSS}${HEADER_REFINEMENT_871_CSS}${SITE_MENU_880_CSS}${THEME_SWITCH_853_CSS}${PAGE_WIDTH_880_CSS}${NM_ARTICLES_890_CSS}${MENU_SECURITY_810_CSS}${UI_812_CSS}${UI_814_CSS}${UI_820_CSS}${UI_821_CSS}${UI_822_CSS}${UI_823_CSS}${UI_824_CSS}${UI_825_CSS}${UI_826_CSS}${UI_900_CSS}${AUDIO_CSS}</style></head><body class="article-page"><div class="article-page-background" aria-hidden="true"><img src="${escapeHtml(background)}" alt=""><span></span></div>${renderCompactHeader(isEditor)}<main class="article-content"><div class="nm-own-label">🛡️ Nemzeti Minimumok cikk</div><h1>${escapeHtml(article.title)}</h1><div class="meta">${escapeHtml(article.category || "Közélet")} · ${escapeHtml(formatArticleDate(article.created_at))}</div>${isEditor ? `<div class="nm-own-actions article-editor-actions"><a class="btn btn-secondary" href="${escapeHtml(makeInternalUrl("/editor/publish", { slug }))}">✏️ Szerkesztés</a><button class="btn btn-secondary danger-action" type="button" onclick="deleteOwnArticle()">🗑️ Törlés</button></div>` : ""}${article.lead ? `<p class="article-lead">${escapeHtml(article.lead)}</p>` : ""}${audioBox}<article class="box nm-own-body">${escapeHtml(article.body)}</article>${videoEmbed}<div class="article-actions own-share-actions"><button class="btn btn-secondary" type="button" onclick="sharePage()">↗ Megosztás</button></div><a class="back home-back article-end-home" href="/"><span class="home-icon">🏠</span><span>Főoldal</span></a><div class="article-view-counter" aria-label="Cikkmegtekintések">👁 Cikkmegtekintések: <strong>${articleViewCount == null ? "–" : formatCounter(articleViewCount)}</strong></div></main>${renderSiteFooter(false)}<script>async function sharePage(){if(navigator.share)await navigator.share({title:document.title,url:location.href});else{await navigator.clipboard.writeText(location.href);alert("A link a vágólapra került.");}}function updateThemeToggle(){const dark=document.documentElement.dataset.theme!=="light";document.querySelectorAll(".theme-slider").forEach(button=>{button.setAttribute("aria-checked",String(dark));button.setAttribute("aria-label",dark?"Sötét mód bekapcsolva":"Világos mód bekapcsolva")});document.querySelectorAll(".theme-control").forEach(control=>{control.dataset.mode=dark?"dark":"light"})}function toggleTheme(){const next=document.documentElement.dataset.theme==="light"?"dark":"light";document.documentElement.dataset.theme=next;try{localStorage.setItem("nm-theme",next)}catch(error){}updateThemeToggle()}updateThemeToggle();${isEditor ? `async function deleteOwnArticle(){if(!confirm("Biztosan törlöd/elrejted ezt a saját NM cikket?"))return;const response=await fetch("/api/editor/articles",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:${JSON.stringify(slug)}})});if(!response.ok){alert("A törlés nem sikerült.");return;}location.href="/editor";}` : ""}</script></body></html>`);
+}
+
+function renderAudioBox(article = {}) {
+  const audioUrl = safeExternalUrl(article.audio_url);
+  if (Number(article.audio_enabled || 0) !== 1 || !audioUrl) return "";
+  const duration = String(article.audio_duration || "").trim();
+  const summary = String(article.audio_summary || "").trim();
+  return `<div class="audio-box">
+    <div class="audio-label">🎧 Hangoscikk</div>
+    <div class="audio-title">Hallgasd meg a cikket</div>
+    ${duration ? `<div class="audio-meta">Időtartam: ${escapeHtml(duration)}</div>` : ""}
+    <audio controls preload="metadata" src="${escapeHtml(audioUrl)}"></audio>
+    ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+  </div>`;
+}
+
+async function renderAudioArticlesPage(pageUrl, db) {
+  const isEditor = pageUrl.searchParams.get("view") === "editor";
+  let articles = [];
+  let loadError = "";
+  if (!db) {
+    loadError = "A hangoscikkek adatbázisa most nem érhető el.";
+  } else {
+    try {
+      const result = await db.prepare(`SELECT slug, title, lead, body, image_url, category, created_at,
+          audio_url, audio_duration, audio_summary
+        FROM nm_articles
+        WHERE status = 'published'
+          AND audio_enabled = 1
+          AND audio_url IS NOT NULL
+          AND trim(audio_url) != ''
+        ORDER BY created_at DESC
+        LIMIT 30`).all();
+      articles = Array.isArray(result?.results) ? result.results : [];
+    } catch (error) {
+      console.error("Audio articles read error", error);
+      loadError = "A hangoscikkek még nem érhetők el. Futtasd a 0006_audio_articles.sql D1 migrációt.";
+    }
+  }
+
+  const cards = articles.map((article) => renderAudioCard(article, isEditor)).join("");
+  return htmlResponse(`<!DOCTYPE html><html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hangoscikkek – Nemzeti Minimumok</title><meta name="description" content="Nemzeti Minimumok hangoscikkek: cikkek hallgatható formában."><meta property="og:type" content="website"><meta property="og:title" content="Nemzeti Minimumok Hangoscikkek"><meta property="og:description" content="Hallgatható Nemzeti Minimumok cikkek egy helyen."><meta property="og:url" content="${PUBLIC_ORIGIN}/hangoscikkek"><meta property="og:image" content="${PUBLIC_ORIGIN}/channel-logo.jpg"><link rel="icon" href="/favicon.jpg"><script>try{document.documentElement.dataset.theme=localStorage.getItem("nm-theme")||"dark"}catch(error){document.documentElement.dataset.theme="dark"}</script><style>${NM_HEADER_HARD_FIX_CSS}${MAIN_CSS}${HEADER_CSS}${BRAND_ASSET_CSS}${HEADER_FOOTER_843_CSS}${HEADER_REFINEMENT_871_CSS}${SITE_MENU_880_CSS}${THEME_SWITCH_853_CSS}${PAGE_WIDTH_880_CSS}${MENU_SECURITY_810_CSS}${UI_812_CSS}${UI_814_CSS}${UI_820_CSS}${UI_821_CSS}${UI_823_CSS}${UI_825_CSS}${UI_900_CSS}${AUDIO_CSS}</style></head><body class="main-page audio-list-page">${renderCompactHeader(isEditor)}<main class="audio-list-content"><section class="news-hero audio-hero"><div class="hero-kicker">🎧 NM Hangoscikkek</div><h1>Hallgatható közös valóság</h1><p>A Nemzeti Minimumok cikkei hangformában: útközben, munka mellett vagy esti lelassuláshoz.</p></section>${loadError ? `<div class="error">${escapeHtml(loadError)}</div>` : ""}${articles.length ? `<section class="audio-grid">${cards}</section>` : `<div class="box">Jelenleg nincs publikált hangoscikk.</div>`}<a class="back home-back article-end-home" href="/"><span class="home-icon">🏠</span><span>Főoldal</span></a></main>${renderSiteFooter(isEditor)}<script>function updateThemeToggle(){const dark=document.documentElement.dataset.theme!=="light";document.querySelectorAll(".theme-slider").forEach(button=>{button.setAttribute("aria-checked",String(dark));button.setAttribute("aria-label",dark?"Sötét mód bekapcsolva":"Világos mód bekapcsolva")});document.querySelectorAll(".theme-control").forEach(control=>{control.dataset.mode=dark?"dark":"light"})}function toggleTheme(){const next=document.documentElement.dataset.theme==="light"?"dark":"light";document.documentElement.dataset.theme=next;try{localStorage.setItem("nm-theme",next)}catch(error){}updateThemeToggle()}updateThemeToggle();</script></body></html>`);
+}
+
+function renderAudioCard(article = {}, isEditor = false) {
+  const slug = String(article.slug || "");
+  const title = String(article.title || "Hangoscikk");
+  const lead = String(article.audio_summary || article.lead || article.body || "").trim();
+  const imageUrl = normalizeArticleImageInput(article.image_url) || topicFallbackImage(title, article.category || "Közélet", []);
+  const articleUrl = isEditor ? makeInternalUrl("/nm-cikk", { slug, view: "editor" }) : makeInternalUrl("/nm-cikk", { slug });
+  return `<article class="audio-card">
+    <a href="${escapeHtml(articleUrl)}">
+      <div class="audio-cover-wrap">
+        <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="lazy">
+        <div class="audio-cover-overlay">
+          <span class="audio-play">▶</span>
+          <span class="audio-cover-badge">🎧 Hangoscikk</span>
+        </div>
+      </div>
+      <div class="audio-card-body">
+        <h2>${escapeHtml(title)}</h2>
+        ${lead ? `<p>${escapeHtml(shortenSmart(lead, 180))}</p>` : ""}
+        ${article.audio_duration ? `<small>${escapeHtml(article.audio_duration)}</small>` : ""}
+      </div>
+    </a>
+  </article>`;
+}
+
+async function renderNmArticleImage(pageUrl, db) {
+  const slug = String(pageUrl.searchParams.get("slug") || "").slice(0, 160);
+  if (!db || !slug) return Response.redirect(`${PUBLIC_ORIGIN}/channel-logo.jpg`, 302);
+  let row;
+  try {
+    row = await db.prepare("SELECT title, category, image_url FROM nm_articles WHERE slug = ? AND status = 'published'")
+      .bind(slug)
+      .first();
+  } catch {
+    row = null;
+  }
+  const image = normalizeArticleImageInput(row?.image_url) || topicFallbackImage(row?.title || "Nemzeti Minimumok", row?.category || "Közélet", []);
+  if (image.startsWith("data:")) {
+    const match = image.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/i);
+    if (match) {
+      const binary = atob(match[2]);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      return new Response(bytes, {
+        headers: {
+          "Content-Type": match[1].toLowerCase() === "image/jpg" ? "image/jpeg" : match[1].toLowerCase(),
+          "Cache-Control": "public, max-age=3600"
+        }
+      });
+    }
+  }
+  return Response.redirect(absolutePublicUrl(image), 302);
+}
+
+async function handleTranslationApi(request, env = {}) {
+  if (request.method !== "POST") {
+    return jsonResponse({ error: "A fordítási végpont csak POST kérést fogad." }, 405);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Érvénytelen kérés." }, 400);
+  }
+
+  const text = String(body?.text || "").trim();
+  const articleId = String(body?.articleId || "").trim().slice(0, 2048);
+  const translationCacheId = articleId ? `${articleId}::en-journalistic-v2` : "";
+  if (!text) return jsonResponse({ error: "Nincs lefordítható szöveg." }, 400);
+  if (text.length > 4000) return jsonResponse({ error: "A szöveg túl hosszú." }, 413);
+  const cachedTranslation = await getCachedTranslation(env.DB, translationCacheId, text);
+  if (cachedTranslation) return jsonResponse({ translation: cachedTranslation, cached: true });
+  if (!env.AI || typeof env.AI.run !== "function") {
+    return jsonResponse({ error: "Az AI fordítás még nincs összekapcsolva a Workerrel." }, 503);
+  }
+
+  try {
+    const result = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      messages: [
+        {
+          role: "system",
+          content: "You are a professional Hungarian-to-English news translator. Produce natural, accurate journalistic English. Preserve every name, number, institution and factual qualification. Do not summarize, explain or add information. Return only the English translation."
+        },
+        { role: "user", content: text }
+      ],
+      temperature: 0.1,
+      max_tokens: 900
+    });
+    const translation = String(
+      result?.translated_text ||
+      result?.translation ||
+      result?.response ||
+      result?.translations?.[0]?.translated_text ||
+      result?.[0]?.translation_text ||
+      result?.[0]?.translated_text ||
+      ""
+    ).trim();
+    if (!translation) throw new Error("Üres fordítási válasz");
+    await storeCachedTranslation(env.DB, translationCacheId, text, translation);
+    return jsonResponse({ translation, cached: false });
+  } catch (error) {
+    console.error("Workers AI translation error", error);
+    return jsonResponse({ error: "Az angol fordítás átmenetileg nem érhető el." }, 502);
+  }
+}
+
+async function getCachedTranslation(db, articleId, sourceText) {
+  if (!db || !articleId) return "";
+  try {
+    const row = await db.prepare("SELECT summary_en, source_text FROM article_translations WHERE article_id = ?")
+      .bind(articleId)
+      .first();
+    return row?.source_text === sourceText ? String(row.summary_en || "") : "";
+  } catch {
+    return "";
+  }
+}
+
+async function storeCachedTranslation(db, articleId, sourceText, translation) {
+  if (!db || !articleId) return false;
+  try {
+    await db.prepare(`INSERT INTO article_translations (article_id, source_text, summary_en, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(article_id) DO UPDATE SET
+        source_text = excluded.source_text,
+        summary_en = excluded.summary_en,
+        updated_at = CURRENT_TIMESTAMP`)
+      .bind(articleId, sourceText, translation)
+      .run();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function handleArticleRedirect(pageUrl, db) {
+  const url = safeExternalUrl(pageUrl.searchParams.get("url"));
+  if (!url) return new Response("Érvénytelen forráslink.", { status: 400 });
+  await safeLogEvent(db, "article_click", pageUrl.searchParams.get("id") || url);
+  return Response.redirect(url, 302);
+}
+
+async function renderHomePage(pageUrl, db) {
+  const isEditor = pageUrl.pathname === "/editor" || pageUrl.searchParams.get("view") === "editor";
+  const query = (pageUrl.searchParams.get("q") || "").toLowerCase().trim();
+  const selectedTag = (pageUrl.searchParams.get("tag") || "").trim();
+  const siteViews = isEditor ? await getSiteViews(db) : await incrementHomeView(db);
+  if (isEditor) await safeLogEvent(db, "page_view");
+  if (query) await safeLogEvent(db, "search", query);
+  const [allItems, dailyInfo, siteStats, nmArticles, hiddenArticleIds] = await Promise.all([loadAllItems(), loadDailyInfo(), getStats(db), getPublishedNmArticles(db), getHiddenArticleIds(db)]);
+  const hiddenSet = new Set(hiddenArticleIds);
+  const validItems = allItems.filter((item) => !item.error && !hiddenSet.has(articleIdentity(item)));
+  const articleViewRows = await getTopArticleViews(db);
+  const articleViewCounts = new Map(articleViewRows.map((row) => [String(row.article_id || ""), Number(row.clicks || 0)]));
+  for (const item of validItems) item.viewCount = articleViewCounts.get(rssArticleId(item)) || 0;
+  for (const item of nmArticles) item.viewCount = articleViewCounts.get(`nm:${item.slug}`) || 0;
+  const quickNews = validItems
+    .filter((item) => ["Telex", "Magyar Hang"].includes(item.source) && String(item.description || "").trim().length < 120)
+    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+    .slice(0, 8);
+  const filteredItems = validItems.filter((item) => {
+    const matchesQuery = !query ||
+        item.title.toLowerCase().includes(query) ||
+        item.source.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query) ||
+        item.description.toLowerCase().includes(query);
+    const matchesTag = !selectedTag || item.tags.includes(selectedTag);
+    return matchesQuery && matchesTag;
+  });
+  const recommended = [...validItems]
+    .filter((item) => itemAgeHours(item.pubDate) <= 72)
+    .sort((a, b) =>
+      b.score - a.score ||
+      b.socialImpactScore - a.socialImpactScore ||
+      b.freshnessScore - a.freshnessScore
+    )
+    .slice(0, 7);
+  const availableTags = collectTagCounts(validItems);
+  const topNews = matchTopNews(articleViewRows, validItems);
+
+  return htmlResponse(renderMainPage({
+    query, selectedTag, availableTags, validItems, filteredItems, recommended, quickNews, topNews, siteViews, siteStats, dailyInfo, nmArticles, isEditor
+  }));
+}
+
+async function loadDailyInfo() {
+  const now = new Date();
+  const timeZone = "Europe/Budapest";
+  const dateParts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", { timeZone, month: "numeric", day: "numeric" })
+      .formatToParts(now)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const dateLabel = `${String(dateParts.month).padStart(2, "0")}. ${String(dateParts.day).padStart(2, "0")}.`;
+  const timeLabel = new Intl.DateTimeFormat("hu-HU", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(now);
+
+  const [nameDay, weather, worldCup] = await Promise.all([
+    loadNameDay(Number(dateParts.day), Number(dateParts.month)),
+    loadStableBudapestWeather(),
+    loadWorldCupMatch()
+  ]);
+  return { dateLabel, timeLabel, nameDay, weather, worldCup };
+}
+
+async function loadNameDay(day, month) {
+  const builtIn = fallbackNameDay(day, month);
+  if (builtIn) return builtIn;
+  const endpoints = [
+    `https://nameday.abalin.net/api/V2/date?day=${day}&month=${month}&country=hu`,
+    `https://nameday.abalin.net/api/V1/getdate?day=${day}&month=${month}&country=hu`,
+    "https://nameday.abalin.net/api/V2/today?country=hu"
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const response = await cachedFetch(endpoint, 86_400, {
+        headers: { "Accept": "application/json", "User-Agent": "NM-Hirfigyelo/8.11.2" }
+      });
+      if (!response.ok) continue;
+      const value = extractNameDay(await response.json());
+      if (value) return value;
+    } catch (error) {
+      console.error("Name day service error", error);
+    }
+  }
+  return "–";
+}
+
+function extractNameDay(data) {
+  const candidates = [
+    data?.nameday?.hu, data?.nameday?.HU, data?.names?.hu, data?.names?.HU,
+    data?.nameday, data?.name, data?.data?.nameday?.hu, data?.data?.name
+  ];
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      const joined = value.filter(Boolean).join(", ");
+      if (joined) return joined;
+    }
+    if (typeof value === "string" && value.trim()) return value.trim().replaceAll("/", ", ");
+  }
+  return "";
+}
+
+function fallbackNameDay(day, month) {
+  if (month !== 6) return "";
+  const june = {
+    1:"Tünde",2:"Kármen, Anita",3:"Klotild",4:"Bulcsú",5:"Fatime",6:"Norbert, Cintia",
+    7:"Róbert",8:"Medárd",9:"Félix",10:"Margit, Gréta",11:"Barnabás",12:"Villő",
+    13:"Antal, Anett",14:"Vazul",15:"Jolán, Vid",16:"Jusztin",17:"Laura, Alida",
+    18:"Arnold, Levente",19:"Gyárfás",20:"Rafael",21:"Alajos, Leila",22:"Paulina",
+    23:"Zoltán",24:"Iván",25:"Vilmos",26:"János, Pál",27:"László",28:"Levente, Irén",
+    29:"Péter, Pál",30:"Pál"
+  };
+  return june[day] || "";
+}
+
+async function loadStableBudapestWeather() {
+  const providers = [loadBudapestWeatherOpenMeteo, loadBudapestWeatherMetNo];
+  for (const provider of providers) {
+    try {
+      const value = await provider();
+      if (value) return value;
+    } catch (error) {
+      console.error("Weather provider error", error);
+    }
+  }
+  return "";
+}
+
+async function loadBudapestWeatherOpenMeteo() {
+  try {
+    const endpoint = "https://api.open-meteo.com/v1/forecast?latitude=47.4979&longitude=19.0402&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FBudapest&forecast_days=1";
+    const response = await cachedFetch(endpoint, 1_800, { headers: { "Accept": "application/json" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const code = Number(data?.daily?.weather_code?.[0] ?? data?.current?.weather_code);
+    const current = Number(data?.current?.temperature_2m);
+    const minimum = Number(data?.daily?.temperature_2m_min?.[0]);
+    const maximum = Number(data?.daily?.temperature_2m_max?.[0]);
+    const currentText = Number.isFinite(current) ? `${Math.round(current)} °C` : "–";
+    const rangeText = Number.isFinite(minimum) && Number.isFinite(maximum)
+      ? ` · ma ${Math.round(minimum)}–${Math.round(maximum)} °C`
+      : "";
+    return `${weatherIcon(code)} Budapest: ${currentText} · ${weatherDescription(code)}${rangeText}`;
+  } catch (error) {
+    console.error("Open-Meteo weather error", error);
+    return "";
+  }
+}
+
+async function loadBudapestWeatherMetNo() {
+  try {
+    const endpoint = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=47.4979&lon=19.0402";
+    const response = await cachedFetch(endpoint, 1_800, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "NemzetiMinimumokHirfigyelo/9.1.0 contact: nemzetiminimumok.hu"
+      }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const instant = data?.properties?.timeseries?.[0]?.data?.instant?.details || {};
+    const nextHour = data?.properties?.timeseries?.[0]?.data?.next_1_hours?.summary?.symbol_code || "";
+    const current = Number(instant.air_temperature);
+    const wind = Number(instant.wind_speed);
+    const icon = weatherIconFromSymbol(nextHour);
+    const tempText = Number.isFinite(current) ? `${Math.round(current)} °C` : "–";
+    const windText = Number.isFinite(wind) ? ` · szél ${Math.round(wind)} m/s` : "";
+    return `${icon} Budapest: ${tempText}${nextHour ? ` · ${weatherDescriptionFromSymbol(nextHour)}` : ""}${windText}`;
+  } catch (error) {
+    console.error("MET Norway weather error", error);
+    return "";
+  }
+}
+
+async function loadWorldCupMatch() {
+  try {
+    const rangeStart = new Date();
+    const rangeEnd = new Date(rangeStart.getTime() + 21 * 24 * 60 * 60 * 1000);
+    const dateKey = (date) => date.toISOString().slice(0, 10).replaceAll("-", "");
+    const endpoints = [
+      "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard",
+      "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world_cup/scoreboard",
+      "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.wwc/scoreboard"
+    ].map((base) => `${base}?dates=${dateKey(rangeStart)}-${dateKey(rangeEnd)}&limit=200`);
+    let events = [];
+    for (const endpoint of endpoints) {
+      try {
+        const response = await cachedFetch(endpoint, 60, { headers: { "Accept": "application/json" } });
+        if (!response.ok) continue;
+        const data = await response.json();
+        events = Array.isArray(data?.events) ? data.events : [];
+        if (events.length) break;
+      } catch (error) {
+        console.error("World Cup endpoint error", endpoint, error);
+      }
+    }
+    if (!events.length) {
+      return { summary: "", scorers: "" };
+    }
+    const live = events.find((event) => event?.status?.type?.state === "in") || null;
+    if (!live) {
+      const upcoming = events
+        .filter((event) => event?.status?.type?.state === "pre" && !Number.isNaN(new Date(event.date).getTime()))
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] || null;
+      if (!upcoming) return { summary: "", scorers: "" };
+      const nextCompetition = upcoming.competitions?.[0] || {};
+      const nextCompetitors = Array.isArray(nextCompetition.competitors) ? nextCompetition.competitors : [];
+      const nextHome = nextCompetitors.find((entry) => entry.homeAway === "home") || nextCompetitors[0] || {};
+      const nextAway = nextCompetitors.find((entry) => entry.homeAway === "away") || nextCompetitors[1] || {};
+      const nextHomeName = nextHome.team?.shortDisplayName || nextHome.team?.displayName || "Hazai";
+      const nextAwayName = nextAway.team?.shortDisplayName || nextAway.team?.displayName || "Vendég";
+      const nextTime = new Intl.DateTimeFormat("hu-HU", {
+        timeZone: "Europe/Budapest", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"
+      }).format(new Date(upcoming.date));
+      return { summary: `⚽ Következő VB-meccs · ${nextHomeName}–${nextAwayName} · ${nextTime}`, scorers: "" };
+    }
+    const competition = live.competitions?.[0] || {};
+    const competitors = Array.isArray(competition.competitors) ? competition.competitors : [];
+    const home = competitors.find((entry) => entry.homeAway === "home") || competitors[0] || {};
+    const away = competitors.find((entry) => entry.homeAway === "away") || competitors[1] || {};
+    const homeName = home.team?.shortDisplayName || home.team?.displayName || "Hazai";
+    const awayName = away.team?.shortDisplayName || away.team?.displayName || "Vendég";
+    const clock = live.status?.displayClock || live.status?.type?.shortDetail || "ÉLŐ";
+    const details = Array.isArray(competition.details) ? competition.details : [];
+    const scorerNames = details
+      .filter((detail) => detail?.scoringPlay || /goal/i.test(detail?.type?.text || ""))
+      .map((detail) => {
+        const athlete = detail.athletes?.[0]?.displayName || detail.athlete?.displayName || "";
+        const time = detail.clock?.displayValue || "";
+        return [athlete, time].filter(Boolean).join(" ");
+      })
+      .filter(Boolean);
+    return {
+      summary: `⚽ VB ÉLŐ · ${homeName} ${home.score || 0}–${away.score || 0} ${awayName} · ${clock}`,
+      scorers: scorerNames.length ? `Gólszerzők: ${scorerNames.join(", ")}` : "Gólszerzők: még nincs gól"
+    };
+  } catch (error) {
+    console.error("World Cup service error", error);
+    return { summary: "", scorers: "" };
+  }
+}
+
+function weatherDescription(code) {
+  if (!Number.isFinite(code)) return "változó idő";
+  if (code === 0) return "derült";
+  if ([1, 2].includes(code)) return "gyengén felhős";
+  if (code === 3) return "borult";
+  if ([45, 48].includes(code)) return "ködös";
+  if ([51, 53, 55, 56, 57].includes(code)) return "szitálás";
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "esős";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "havas";
+  if ([95, 96, 99].includes(code)) return "zivataros";
+  return "változó idő";
+}
+
+function weatherIcon(code) {
+  if (!Number.isFinite(code)) return "🌡️";
+  if (code === 0) return "☀️";
+  if ([1, 2, 3, 45, 48].includes(code)) return "☁️";
+  if ([56, 57, 66, 67, 71, 73, 75, 77, 85, 86, 96, 99].includes(code)) return "🧊";
+  return "🌧️";
+}
+
+function weatherIconFromSymbol(symbol) {
+  const text = String(symbol || "").toLowerCase();
+  if (text.includes("clearsky") || text.includes("fair")) return "☀️";
+  if (text.includes("thunder")) return "⛈️";
+  if (text.includes("sleet") || text.includes("snow")) return "🧊";
+  if (text.includes("rain") || text.includes("showers") || text.includes("drizzle")) return "🌧️";
+  if (text.includes("cloudy") || text.includes("fog")) return "☁️";
+  return "🌡️";
+}
+
+function weatherDescriptionFromSymbol(symbol) {
+  const text = String(symbol || "").toLowerCase();
+  if (text.includes("clearsky")) return "derült";
+  if (text.includes("fair")) return "gyengén felhős";
+  if (text.includes("partlycloudy")) return "változóan felhős";
+  if (text.includes("cloudy")) return "felhős";
+  if (text.includes("fog")) return "ködös";
+  if (text.includes("thunder")) return "zivataros";
+  if (text.includes("sleet")) return "ónos/esős-havas";
+  if (text.includes("snow")) return "havas";
+  if (text.includes("rain") || text.includes("showers") || text.includes("drizzle")) return "esős";
+  return "változó idő";
+}
+
+async function loadAllItems() {
+  const seen = new Set();
+  const results = await Promise.all(
+    CATEGORIES.flatMap((category) =>
+      category.sources.map((source) => loadSource(category, source))
+    )
+  );
+
+  const allItems = [];
+  for (const items of results) {
+    for (const item of items) {
+      if (item.error) {
+        allItems.push(item);
+        continue;
+      }
+      const key = simpleKey(item.title);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      allItems.push(item);
+    }
+  }
+  return allItems;
+}
+
+async function loadSource(category, source) {
+  try {
+    const response = await cachedFetch(source.url, 300, {
+      headers: { "Accept": "application/rss+xml, application/xml, text/xml", "User-Agent": "NM-Hirfigyelo/8.11.2" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const xml = await response.text();
+    const rawItems = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
+    return rawItems.slice(0, 10).map((raw) => {
+      const title = cleanText(getTag(raw, "title")) || "Nincs cím";
+      const link = cleanText(getTag(raw, "link")) || "#";
+      const pubDate = cleanText(getTag(raw, "pubDate"));
+      const description = sanitizeRssSummary(stripHtml(cleanText(getTag(raw, "description"))), title);
+      const image = extractImage(raw);
+      const textForScore = `${title} ${description}`;
+      const keywordScore = scoreKeywords(textForScore);
+      const freshnessScore = scoreFreshness(pubDate);
+      const sourceScore = source.weight || 0;
+      const investigativeBonus = source.investigative ? 18 : 0;
+      const cikkScore = scoreCikk10(textForScore);
+      const cikkPotentialBonus = Math.min(20, Math.round(cikkScore / 4));
+      const socialImpactScore = scoreSocialImpact(textForScore);
+
+      return {
+        title, link, pubDate, description, image,
+        summary_hu: description,
+        summary_en: "",
+        source: source.name,
+        category: category.name,
+        score: keywordScore + freshnessScore + sourceScore + investigativeBonus + cikkPotentialBonus + socialImpactScore,
+        keywordScore,
+        freshnessScore,
+        sourceScore,
+        investigativeBonus,
+        cikkScore,
+        cikkPotentialBonus,
+        socialImpactScore,
+        tags: generateTopicTags(textForScore)
+      };
+    });
+  } catch (error) {
+    return [{
+      title: `Nem sikerült betölteni ezt a forrást: ${source.name}`,
+      link: "#", pubDate: "", description: "", image: "",
+      source: source.name, category: category.name, score: 0, cikkScore: 0,
+      error: true
+    }];
+  }
+}
+
+function renderMainPage(data) {
+  const lastUpdate = new Date().toLocaleString("hu-HU", { timeZone: "Europe/Budapest" });
+  const homePath = data.isEditor ? "/editor" : "/";
+  let html = `<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nemzeti Minimumok Hírfigyelő</title>
+  <meta name="description" content="Független magyar hírfigyelő közéleti, gazdasági és tényfeltáró hírekkel.">
+  <meta name="robots" content="${data.isEditor ? "noindex,nofollow" : "index,follow"}">
+  <meta name="theme-color" content="#111111">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("nm-theme")||"dark"}catch(error){document.documentElement.dataset.theme="dark"}</script>
+  <link rel="canonical" href="${PUBLIC_ORIGIN}/">
+  <link rel="icon" href="/favicon.jpg" type="image/jpeg">
+  <link rel="apple-touch-icon" href="/favicon.jpg">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="hu_HU">
+  <meta property="og:title" content="Nemzeti Minimumok Hírfigyelő">
+  <meta property="og:description" content="A legfontosabb hazai és nemzetközi hírek egy helyen.">
+  <meta property="og:url" content="${PUBLIC_ORIGIN}/">
+  <meta property="og:image" content="${PUBLIC_ORIGIN}/channel-logo.jpg">
+  <meta property="og:image:secure_url" content="${PUBLIC_ORIGIN}/channel-logo.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Nemzeti Minimumok Hírfigyelő">
+  <meta name="twitter:description" content="A legfontosabb hazai és nemzetközi hírek egy helyen.">
+  <meta name="twitter:image" content="${PUBLIC_ORIGIN}/channel-logo.jpg">
+  <style>${NM_HEADER_HARD_FIX_CSS}${MAIN_CSS}${TAG_CSS}${HEADER_CSS}${BRAND_ASSET_CSS}${PUBLIC_TEST_CSS}${ANALYTICS_CSS}${LAYOUT_842_CSS}${HEADER_FOOTER_843_CSS}${NEWS_PORTAL_850_CSS}${DAILY_THEME_851_CSS}${HEADER_LOGO_852_CSS}${THEME_SWITCH_853_CSS}${PERFORMANCE_860_CSS}${LIVE_NEWS_870_CSS}${HEADER_REFINEMENT_871_CSS}${SITE_MENU_880_CSS}${PAGE_WIDTH_880_CSS}${NM_ARTICLES_890_CSS}${MENU_SECURITY_810_CSS}${UI_811_CSS}${UI_812_CSS}${UI_814_CSS}${UI_815_CSS}${UI_817_CSS}${UI_818_CSS}${UI_820_CSS}${UI_821_CSS}${UI_822_CSS}${UI_823_CSS}${UI_824_CSS}${UI_825_CSS}${UI_826_CSS}${UI_900_CSS}</style>
+</head>
+<body class="main-page">
+  <header class="site-header" style="min-height:0!important;height:auto!important;padding:12px 10px!important;margin:0 0 14px!important;border-radius:0 0 18px 18px!important;background:#070707!important;background-image:none!important;border:0!important;border-bottom:2px solid #c9152d!important;box-shadow:0 8px 22px rgba(0,0,0,.28)!important;overflow:visible!important;">
+    <div class="header-layout" style="display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;width:100%!important;max-width:1220px!important;margin:0 auto!important;padding:0!important;">
+      <details class="site-menu">
+        <summary aria-label="Menü" title="Menü"><span class="menu-lines" aria-hidden="true">☰</span><span class="menu-back" aria-hidden="true">←</span></summary>
+        <nav class="site-menu-panel" aria-label="Főmenü">
+          <button class="menu-close" type="button" onclick="this.closest('details').removeAttribute('open')"><span aria-hidden="true">←</span> Menü bezárása</button>
+          <a href="${homePath}">Kezdőlap</a>
+          <a href="/hangoscikkek">🎧 Hangoscikkek</a>
+          ${NAV_CATEGORIES.map((category) => `<a href="${escapeHtml(makeInternalUrl(homePath, { q: category.name }))}">${escapeHtml(category.name)}</a>`).join("")}
+          ${data.isEditor ? '<a href="/editor/publish">✍️ Saját NM cikk publikálása</a>' : ""}
+          <div class="menu-theme-row">
+            <span>Megjelenés</span>
+            <div class="theme-control menu-theme-control" data-mode="dark" aria-label="Megjelenési mód">
+              <span class="theme-symbol" aria-hidden="true">☀️</span>
+              <button class="theme-slider" type="button" role="switch" aria-checked="true" aria-label="Sötét mód bekapcsolva" onclick="toggleTheme()"><span class="theme-thumb"></span></button>
+              <span class="theme-symbol" aria-hidden="true">🌙</span>
+            </div>
+          </div>
+          <div class="push-option-row">
+            <span>🔔 Értesítések</span>
+            <button id="pushToggle" class="push-switch" type="button" role="switch" aria-checked="false" aria-label="Értesítések kikapcsolva" onclick="togglePush(this)"><span></span></button>
+          </div>
+        </nav>
+      </details>
+      <div class="brand nm-hero-header">
+        <div class="nm-header-card">
+          <div class="nm-logo-wrap"><img src="/channel-logo.jpg" alt="Nemzeti Minimumok logó" class="nm-logo"></div>
+          <div class="nm-title-block">
+            <div class="nm-title-script">Nemzeti</div>
+            <div class="nm-title-main">MINIMUMOK</div>
+            <div class="nm-tagline">IGAZSÁG • SZABADSÁG • ÖSSZEFOGÁS</div>
+          </div>
+        </div>
+      </div>
+      ${data.isEditor ? '<a class="nm-create-btn" href="/editor/publish">NM cikk+</a>' : ""}
+      <details class="header-search"${data.query ? " open" : ""}>
+        <summary aria-label="Keresés" title="Keresés"><span aria-hidden="true">🔍</span></summary>
+        <form class="search-box header-search-form" method="GET" action="${homePath}">
+          <input name="q" value="${escapeHtml(data.query)}" placeholder="Mire vagy kíváncsi?" aria-label="Keresés a hírek között">
+          ${data.selectedTag ? `<input type="hidden" name="tag" value="${escapeHtml(data.selectedTag)}">` : ""}
+          <button type="submit" aria-label="Keresés">Keresés</button>
+        </form>
+      </details>
+    </div>
+  </header>
+  ${renderViewportScript()}
+  <section class="daily-info-bar standalone-daily-info" aria-label="Mai információk">
+    <div class="daily-date"><span class="daily-icon">📅</span><span>${escapeHtml(data.dailyInfo.dateLabel)}<br><small>${escapeHtml(data.dailyInfo.timeLabel || "")}</small></span></div>
+    <div class="daily-details">
+      <div><span class="daily-icon">🌼</span><span>Névnap: <strong>${escapeHtml(data.dailyInfo.nameDay)}</strong></span></div>
+      ${data.dailyInfo.weather ? `<div class="daily-weather"><span>${escapeHtml(data.dailyInfo.weather).replace(" · ", "<br>")}</span></div>` : ""}
+    </div>
+    ${data.dailyInfo.worldCup?.summary ? `<div class="live-match"><strong>${escapeHtml(data.dailyInfo.worldCup.summary)}</strong>${data.dailyInfo.worldCup.scorers ? `<small>${escapeHtml(data.dailyInfo.worldCup.scorers)}</small>` : ""}</div>` : ""}
+    <div class="daily-theme-box" aria-label="Téma választó">
+      <span class="theme-symbol" aria-hidden="true">☀️</span>
+      <button class="theme-slider" type="button" role="switch" aria-checked="true" aria-label="Sötét mód bekapcsolva" onclick="toggleTheme()"><span class="theme-thumb"></span></button>
+      <span class="theme-symbol" aria-hidden="true">🌙</span>
+    </div>
+  </section>`;
+
+  const statsHtml = `<section class="stats portal-stats">
+    <div>Összes beolvasott hír: <strong>${data.validItems.length}</strong></div>
+    <div>Utolsó frissítés: <strong>${escapeHtml(lastUpdate)}</strong></div>
+    <div class="visitor-stat"><span>👥 Összes látogatás</span> <strong>${formatCounter(data.siteViews)}</strong></div>
+    <div>Mai oldalmegnyitások: <strong>${formatCounter(data.siteStats.todayViews)}</strong></div>
+    <div>Cikkmegtekintések: <strong>${formatCounter(data.siteStats.articleViews)}</strong></div>
+    ${data.query ? `<div>Keresési találatok: <strong>${data.filteredItems.length}</strong></div>` : ""}
+    ${data.selectedTag ? `<div>Aktív témacímke: <strong>${escapeHtml(data.selectedTag)}</strong></div>` : ""}
+    ${data.isEditor ? `<div>NM Ajánlja kiemeltek: <strong>${data.recommended.length}</strong></div>
+    <div class="small-note">Rangsorolás: kulcsszó + frissesség + forrás + tényfeltárás + CIKK1.0-potenciál + társadalmi hatás.</div>` : ""}
+  </section>`;
+
+  if (!data.query && !data.selectedTag) html += renderNmArticles(data.nmArticles, data.isEditor);
+  if (!data.query && !data.selectedTag) html += renderQuickNews(data.quickNews, data.isEditor);
+  html += data.query || data.selectedTag
+    ? renderSearchResults(data.query, data.selectedTag, data.filteredItems, data.isEditor)
+    : renderRecommended(data.recommended, data.isEditor);
+  html += renderTagFilter(data.availableTags, data.selectedTag, data.isEditor, data.query);
+  if (!data.query && !data.selectedTag) html += renderTopNews(data.topNews, data.isEditor);
+  html += renderCategories(data.filteredItems, data.isEditor);
+  html += statsHtml;
+  html += renderSiteFooter(data.isEditor);
+  html += `<script>
+    async function hideRssArticle(button) {
+      if (!button || !confirm("Biztosan elrejted ezt az RSS-cikket?")) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/editor/hidden", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articleId: button.dataset.articleId || "", title: button.dataset.title || "" })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Nem sikerült elrejteni.");
+        button.closest(".card")?.remove();
+      } catch (error) {
+        alert(error.message || "Nem sikerült elrejteni.");
+        button.disabled = false;
+      }
+    }
+    async function hideNmArticle(button) {
+      if (!button || !confirm("Biztosan elrejted ezt a saját NM cikket?")) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/editor/articles", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug: button.dataset.slug || "" })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Nem sikerült elrejteni.");
+        button.closest(".nm-own-card,.nm-own-feature-card")?.remove();
+      } catch (error) {
+        alert(error.message || "Nem sikerült elrejteni.");
+        button.disabled = false;
+      }
+    }
+    function slideNmArticles(button, direction) {
+      const wrap = button && button.closest(".nm-own-carousel-wrap");
+      const carousel = wrap && wrap.querySelector(".nm-own-carousel");
+      if (!carousel) return;
+      const amount = Math.max(260, Math.round(carousel.clientWidth * 0.96));
+      carousel.scrollBy({ left: amount * direction, behavior: "smooth" });
+    }
+    function urlBase64ToUint8Array(value) {
+      const padding = "=".repeat((4 - value.length % 4) % 4);
+      const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(base64);
+      return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+    }
+    function setPushToggle(button, enabled) {
+      if (!button) return;
+      button.setAttribute("aria-checked", String(enabled));
+      button.setAttribute("aria-label", enabled ? "Értesítések bekapcsolva" : "Értesítések kikapcsolva");
+    }
+    async function updatePushToggle() {
+      const button = document.getElementById("pushToggle");
+      if (!button || !("serviceWorker" in navigator)) return;
+      try {
+        const registration = await navigator.serviceWorker.getRegistration("/");
+        const subscription = registration ? await registration.pushManager.getSubscription() : null;
+        setPushToggle(button, Boolean(subscription));
+      } catch (error) {}
+    }
+    async function togglePush(button) {
+      if (!("serviceWorker" in navigator) || !("Notification" in window)) {
+        alert("A webes értesítés ezen az eszközön csak támogatott, biztonságos böngészőben érhető el. iPhone-on előbb add az oldalt a Főképernyőhöz, majd onnan nyisd meg.");
+        return;
+      }
+      button.disabled = true;
+      try {
+        const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        if (!registration.pushManager) {
+          throw new Error("A böngésző ebben a módban nem engedélyezi a push értesítéseket. iPhone-on add az oldalt a Főképernyőhöz, majd az ikonról nyisd meg.");
+        }
+        const existing = await registration.pushManager.getSubscription();
+        if (existing) {
+          const endpoint = existing.endpoint;
+          await existing.unsubscribe();
+          await fetch("/api/push/subscribe", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint })
+          });
+          setPushToggle(button, false);
+          return;
+        }
+        const keyResponse = await fetch("/api/push/public-key", { cache: "no-store" });
+        const keyData = await keyResponse.json();
+        if (!keyResponse.ok || !keyData.publicKey) throw new Error("Az értesítési kulcs még nincs beállítva.");
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") throw new Error("Az értesítési engedély nem lett megadva.");
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+        });
+        const response = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(subscription.toJSON())
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "A feliratkozás nem sikerült.");
+        setPushToggle(button, true);
+      } catch (error) {
+        alert(error.message || "Az értesítések beállítása nem sikerült.");
+      } finally {
+        button.disabled = false;
+      }
+    }
+    function updateThemeToggle() {
+      const dark = document.documentElement.dataset.theme !== "light";
+      document.querySelectorAll(".theme-slider").forEach((button) => {
+        button.setAttribute("aria-checked", String(dark));
+        button.setAttribute("aria-label", dark ? "Sötét mód bekapcsolva" : "Világos mód bekapcsolva");
+        button.title = dark ? "Váltás világos módra" : "Váltás sötét módra";
+      });
+      document.querySelectorAll(".theme-control,.daily-theme-box").forEach((control) => {
+        control.dataset.mode = dark ? "dark" : "light";
+      });
+    }
+    function toggleTheme() {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("nm-theme", next); } catch (error) {}
+      updateThemeToggle();
+    }
+    updateThemeToggle();
+    updatePushToggle();
+    setTimeout(() => {
+      const active = document.activeElement;
+      const isTyping = active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
+      const menuOpen = Boolean(document.querySelector("details[open]"));
+      if (!isTyping && !menuOpen) location.reload();
+    }, 120000);
+  </script></body></html>`;
+  return html;
+}
+
+function renderSiteFooter(isEditor = false) {
+  return `<footer class="site-footer">
+    <a class="facebook-link" href="https://www.facebook.com/nemzetiminimumok" target="_blank" rel="noopener noreferrer">
+      <svg class="facebook-logo" viewBox="0 0 24 24" role="img" aria-label="Facebook">
+        <circle cx="12" cy="12" r="12" fill="#1877f2"></circle>
+        <text x="12" y="18" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="18" font-weight="700">f</text>
+      </svg>
+      <span>Nemzeti Minimumok</span>
+    </a>
+    <a class="email-link" href="mailto:nemzetiminimumok@gmail.com">
+      <span class="email-icon" aria-hidden="true">✉️</span>
+      <span>Kapcsolat</span>
+    </a>
+    <div class="footer-version" style="color:#777;font-size:12px;text-align:center">${escapeHtml(VERSION)}</div>
+    <a class="admin-footer-link" href="${isEditor ? "/" : "/editor"}">${isEditor ? "Publikus nézet" : "Admin"}</a>
+  </footer>`;
+}
+
+function renderCompactHeader(isEditor = false) {
+  const homePath = isEditor ? "/editor" : "/";
+  return `<header class="site-header compact-reader-header" style="min-height:0!important;height:auto!important;padding:12px 10px!important;margin:0 0 14px!important;border-radius:0 0 18px 18px!important;background:#070707!important;background-image:none!important;border:0!important;border-bottom:2px solid #c9152d!important;box-shadow:0 8px 22px rgba(0,0,0,.28)!important;overflow:visible!important;">
+    <div class="header-layout" style="display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;width:100%!important;max-width:1220px!important;margin:0 auto!important;padding:0!important;">
+      <details class="site-menu">
+        <summary aria-label="Menü" title="Menü"><span class="menu-lines" aria-hidden="true">☰</span><span class="menu-back" aria-hidden="true">←</span></summary>
+        <nav class="site-menu-panel" aria-label="Főmenü">
+          <button class="menu-close" type="button" onclick="this.closest('details').removeAttribute('open')"><span aria-hidden="true">←</span> Menü bezárása</button>
+          <a href="${homePath}">Kezdőlap</a>
+          <a href="/hangoscikkek">🎧 Hangoscikkek</a>
+          ${NAV_CATEGORIES.map((category) => `<a href="${escapeHtml(makeInternalUrl(homePath, { q: category.name }))}">${escapeHtml(category.name)}</a>`).join("")}
+          ${isEditor ? '<a href="/editor/publish">✍️ Saját NM cikk publikálása</a>' : ""}
+          <div class="menu-theme-row">
+            <span>Megjelenés</span>
+            <div class="theme-control menu-theme-control" data-mode="dark" aria-label="Megjelenési mód">
+              <span class="theme-symbol" aria-hidden="true">☀️</span>
+              <button class="theme-slider" type="button" role="switch" aria-checked="true" aria-label="Sötét mód bekapcsolva" onclick="toggleTheme()"><span class="theme-thumb"></span></button>
+              <span class="theme-symbol" aria-hidden="true">🌙</span>
+            </div>
+          </div>
+        </nav>
+      </details>
+      <a class="brand nm-hero-header" href="${homePath}" aria-label="Nemzeti Minimumok főoldal">
+        <div class="nm-header-card">
+          <div class="nm-logo-wrap"><img src="/channel-logo.jpg" alt="" class="nm-logo"></div>
+          <div class="nm-title-block">
+            <div class="nm-title-script">Nemzeti</div>
+            <div class="nm-title-main">MINIMUMOK</div>
+            <div class="nm-tagline">IGAZSÁG • SZABADSÁG • ÖSSZEFOGÁS</div>
+          </div>
+        </div>
+      </a>
+      ${isEditor ? '<a class="nm-create-btn reader-create-btn" href="/editor/publish">NM cikk+</a>' : ""}
+      <details class="header-search">
+        <summary aria-label="Keresés" title="Keresés"><span aria-hidden="true">🔍</span></summary>
+        <form class="search-box header-search-form" method="GET" action="${homePath}">
+          <input name="q" placeholder="Mire vagy kíváncsi?" aria-label="Keresés a hírek között">
+          <button type="submit" aria-label="Keresés">Keresés</button>
+        </form>
+      </details>
+    </div>
+  </header>${renderViewportScript()}`;
+}
+
+function renderViewportScript() {
+  return `<script>
+    (function(){
+      function setNmViewport(){
+        var width = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+        var mode = width < 520 ? "phone" : width < 900 ? "tablet" : "desktop";
+        document.documentElement.dataset.viewport = mode;
+        document.documentElement.style.setProperty("--nm-vw", width + "px");
+      }
+      setNmViewport();
+      window.addEventListener("resize", setNmViewport, { passive: true });
+      window.addEventListener("orientationchange", setNmViewport, { passive: true });
+    })();
+  </script>`;
+}
+
+function renderSearchResults(query, selectedTag, items, isEditor) {
+  const label = [query ? `„${query}”` : "", selectedTag ? `#${selectedTag}` : ""].filter(Boolean).join(" · ");
+  let html = `<section class="recommended"><div class="recommended-title">🔍 Szűrt hírek: ${escapeHtml(label)}</div><div class="article-grid">`;
+  if (!items.length) html += '<div class="error">Nincs találat erre a keresésre.</div>';
+  for (const item of items) html += renderCard(item, { isEditor });
+  return `${html}</div></section>`;
+}
+
+function renderTagFilter(tags, selectedTag, isEditor, query) {
+  if (!tags.length) return "";
+  const path = isEditor ? "/editor" : "/";
+  const links = tags.slice(0, 10).map(({ tag, count }) => {
+    const href = makeInternalUrl(path, { tag, q: query });
+    const activeClass = tag === selectedTag ? " topic-filter-active" : "";
+    return `<a class="topic-filter${activeClass}" href="${escapeHtml(href)}">${escapeHtml(tag)} <span>${count}</span></a>`;
+  }).join("");
+  const clearHref = query ? makeInternalUrl(path, { q: query }) : path;
+  const clear = selectedTag ? `<a class="topic-filter topic-filter-clear" href="${escapeHtml(clearHref)}">Szűrés törlése</a>` : "";
+  return `<nav class="topic-filters" aria-label="Témacímkék">${links}${clear}</nav>`;
+}
+
+function renderQuickNews(items, isEditor) {
+  if (!items.length) return "";
+  const rows = items.map((item) => {
+    const articleUrl = makeInternalUrl("/article", {
+      id: rssArticleId(item),
+      view: isEditor ? "editor" : "public"
+    });
+    return `<a class="quick-news-item" href="${escapeHtml(articleUrl)}">
+      <span class="quick-news-dot"></span>
+      <span class="quick-news-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(formatArticleDate(item.pubDate))}</small></span>
+    </a>`;
+  }).join("");
+  return `<section class="quick-news"><div class="quick-news-heading"><span>⚡ Gyorshírek</span><small>Rövid RSS-hírek egy pillantásra</small></div><div class="quick-news-grid">${rows}</div></section>`;
+}
+
+function renderNmArticles(items = [], isEditor = false) {
+  if (!items.length) return "";
+  const sortedItems = [...items].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const largeCards = sortedItems.map((item, index) => renderNmFeatureCard(item, isEditor, index === 0)).join("");
+  const smallCards = sortedItems.slice(1).map((item) => {
+    const imageUrl = normalizeArticleImageInput(item.image_url) || topicFallbackImage(item.title, item.category, []);
+    const articleUrl = isEditor ? makeInternalUrl("/nm-cikk", { slug: item.slug, view: "editor" }) : makeInternalUrl("/nm-cikk", { slug: item.slug });
+    return `<article class="nm-own-card"><a class="nm-card-hit" href="${escapeHtml(articleUrl)}" aria-label="${escapeHtml(item.title)}"></a><img class="nm-own-bg" src="${escapeHtml(imageUrl)}" alt="" loading="lazy"><span class="nm-own-shade" aria-hidden="true"></span><img src="${escapeHtml(imageUrl)}" alt="" loading="lazy"><div><a href="${escapeHtml(articleUrl)}">${escapeHtml(item.title)}</a>${item.lead ? `<p>${escapeHtml(shorten(item.lead, 180))}</p>` : ""}<small>${escapeHtml(formatArticleDate(item.created_at))}</small>${isEditor ? `<div class="nm-own-actions"><a class="action-btn" href="${escapeHtml(makeInternalUrl("/editor/publish", { slug: item.slug }))}">✏️ Szerkesztés</a><button class="action-btn danger-action nm-delete-action" type="button" onclick="hideNmArticle(this)" data-slug="${escapeHtml(item.slug)}">🗑️ Törlés</button></div>` : ""}</div><div class="card-read-count" title="Olvasások"><span aria-hidden="true">👁</span> ${formatCounter(item.viewCount || 0)}</div></article>`;
+  }).join("");
+  return `<section id="nm-articles" class="nm-own-articles"><div class="nm-own-heading"><span>🛡️ Nemzeti Minimumok cikkek</span><small>Saját szerkesztői tartalmaink</small></div><div class="nm-own-carousel-wrap"><button class="nm-carousel-btn nm-carousel-prev" type="button" aria-label="Előző cikk" onclick="slideNmArticles(this,-1)">‹</button><div class="nm-own-carousel" tabindex="0">${largeCards}</div><button class="nm-carousel-btn nm-carousel-next" type="button" aria-label="Következő cikk" onclick="slideNmArticles(this,1)">›</button></div>${smallCards ? `<div class="nm-own-grid nm-own-small-grid">${smallCards}</div>` : ""}</section>`;
+}
+
+function renderNmFeatureCard(item, isEditor = false, isLatest = false) {
+  const imageUrl = normalizeArticleImageInput(item.image_url) || topicFallbackImage(item.title, item.category, []);
+  const articleUrl = isEditor ? makeInternalUrl("/nm-cikk", { slug: item.slug, view: "editor" }) : makeInternalUrl("/nm-cikk", { slug: item.slug });
+  return `<article class="nm-own-feature-card"><a class="nm-card-hit" href="${escapeHtml(articleUrl)}" aria-label="${escapeHtml(item.title)}"></a><img class="nm-own-bg" src="${escapeHtml(imageUrl)}" alt="" loading="lazy"><span class="nm-own-shade" aria-hidden="true"></span><img class="nm-own-feature-image" src="${escapeHtml(imageUrl)}" alt="" loading="lazy"><div class="nm-own-feature-copy"><small>${isLatest ? "Legfrissebb saját cikk" : "Nemzeti Minimumok cikk"}</small><a href="${escapeHtml(articleUrl)}">${escapeHtml(item.title)}</a>${item.lead ? `<p>${escapeHtml(shorten(item.lead, 230))}</p>` : ""}<time>${escapeHtml(formatArticleDate(item.created_at))}</time>${isEditor ? `<div class="nm-own-actions"><a class="action-btn" href="${escapeHtml(makeInternalUrl("/editor/publish", { slug: item.slug }))}">✏️ Szerkesztés</a><button class="action-btn danger-action nm-delete-action" type="button" onclick="hideNmArticle(this)" data-slug="${escapeHtml(item.slug)}">🗑️ Törlés</button></div>` : ""}</div><div class="card-read-count" title="Olvasások"><span aria-hidden="true">👁</span> ${formatCounter(item.viewCount || 0)}</div></article>`;
+}
+
+function renderRecommended(items, isEditor) {
+  let html = '<section class="recommended nm-recommendations"><div class="recommended-title recommended-title-minimal"><small>Nemzeti Minimumok ajánlásával</small></div><div class="recommended-list">';
+  if (!items.length) html += '<div class="error">Jelenleg nincs kiemelt hír.</div>';
+  for (const item of items) html += renderCard(item, { isEditor, showScore: true, featured: true });
+  return `${html}</div></section>`;
+}
+
+function renderTopNews(items, isEditor) {
+  if (!items.length) return "";
+  let html = '<section class="top-news"><div class="top-news-title">🔥 Legolvasottabb hírek</div><div class="top-news-list">';
+  for (const item of items) html += renderCard(item, { isEditor, clickCount: item.clickCount });
+  return `${html}</div></section>`;
+}
+
+function renderCategories(items, isEditor) {
+  let html = "";
+  for (const category of CATEGORIES) {
+    const categoryItems = items.filter((entry) => entry.category === category.name);
+    html += `<section class="category"><div class="category-title">${escapeHtml(category.name)}</div><div class="article-grid">`;
+    for (const item of categoryItems) html += renderCard(item, { isEditor });
+    html += "</div></section>";
+  }
+  return html;
+}
+
+function renderCard(item, { isEditor = false, showScore = false, clickCount = null, featured = false } = {}) {
+  const articleUrl = makeInternalUrl("/article", {
+    id: rssArticleId(item),
+    view: isEditor ? "editor" : "public"
+  });
+  const promptBase = makeInternalUrl("/prompt", {
+    title: item.title, url: item.link, source: item.source, view: "editor"
+  });
+  const rssImage = safeExternalUrl(item.image);
+  const displayImage = rssImage || topicFallbackImage(item.title, item.category, item.tags);
+  const backgroundImage = displayImage;
+  const summaryHu = item.summary_hu || item.description || "Magyar összefoglaló még nem érhető el.";
+  const placeholderTitle = String(item.source || "NM").slice(0, 18);
+  const placeholderCategory = String(item.category || "Hír").replace(/^[^\p{L}\p{N}]+/u, "").slice(0, 22);
+  const cardViewCount = clickCount ?? item.viewCount ?? 0;
+
+  return `<article class="card${featured ? " card-featured" : ""}${rssImage ? "" : " card-topic-fallback"}" data-article-id="${escapeHtml(item.link || item.title)}">
+    <img class="card-bg" src="${escapeHtml(backgroundImage)}" alt="" loading="lazy"><span class="card-bg-shade" aria-hidden="true"></span><img class="thumb${rssImage ? "" : " thumb-topic-fallback"}" src="${escapeHtml(displayImage)}" alt="" loading="lazy">
+    <div class="card-body">
+      <a class="card-title" href="${escapeHtml(articleUrl)}">${escapeHtml(item.title)}</a>
+      ${summaryHu ? `<p class="lead summary-hu" data-full-text="${escapeHtml(summaryHu)}">${escapeHtml(shortenSmart(summaryHu, featured ? 145 : 120))}</p>` : ""}
+      <div class="card-meta-row"><div class="meta">${escapeHtml(formatArticleDate(item.pubDate))}</div></div>
+      <div class="card-read-count" title="Olvasások"><span aria-hidden="true">👁</span> ${formatCounter(cardViewCount)}</div>
+      ${isEditor && showScore ? `<div class="score">NM: ${Math.round(item.score)} · kulcsszó: ${item.keywordScore || 0} · frissesség: ${item.freshnessScore || 0} · forrás: ${item.sourceScore || 0} · tényfeltárás: ${item.investigativeBonus || 0} · CIKK1.0: ${item.cikkPotentialBonus || 0} · társadalmi hatás: ${item.socialImpactScore || 0}</div>` : ""}
+      ${renderBadges(item, isEditor)}
+      ${renderCardTags(item.tags, isEditor)}
+      ${isEditor ? `<div class="actions">
+      <a class="action-btn" href="${escapeHtml(`${promptBase}&type=cikk`)}">📝 Cikk1.0</a>
+      <a class="action-btn" href="${escapeHtml(`${promptBase}&type=hangcikk`)}">🎧 Hangcikk</a>
+      <a class="action-btn" href="${escapeHtml(`${promptBase}&type=kep`)}">🖼 Cikkkép</a>
+      <a class="action-btn" href="${escapeHtml(`${promptBase}&type=reel`)}">🎥 Reel</a>
+      <a class="action-btn" href="${escapeHtml(`${promptBase}&type=narrativa`)}">⚔️ Narratíva</a>
+      <button class="action-btn danger-action" type="button" onclick="hideRssArticle(this)" data-article-id="${escapeHtml(articleIdentity(item))}" data-title="${escapeHtml(item.title)}">Elrejtés</button>
+      </div>` : ""}
+    </div>
+  </article>`;
+}
+
+function renderCardTags(tags = [], isEditor = false) {
+  if (!tags.length) return "";
+  const path = isEditor ? "/editor" : "/";
+  return `<div class="card-tags">${tags.slice(0, 3).map((tag) =>
+    `<a href="${escapeHtml(makeInternalUrl(path, { tag }))}">#${escapeHtml(tag)}</a>`
+  ).join("")}</div>`;
+}
+
+function renderBadges(item, isEditor = false) {
+  const badges = [];
+  if (isEditor && item.cikkScore >= 20) badges.push('<span class="badge badge-cikk">📝 CIKK1.0-KOMPATIBILIS</span>');
+  if (isEditor && item.score >= 45) badges.push('<span class="badge badge-high">⭐ MAGAS NM ÉRTÉK</span>');
+  if (isEditor && item.investigativeBonus > 0) badges.push('<span class="badge badge-investigative">🔎 TÉNYFELTÁRÓ</span>');
+  return badges.length ? `<div class="badges">${badges.join("")}</div>` : "";
+}
+
+async function getCachedGeneratedArticle(db, articleId, sourceText) {
+  if (!db || !articleId) return "";
+  try {
+    const row = await db.prepare("SELECT article_hu, source_text FROM generated_articles WHERE article_id = ?")
+      .bind(String(articleId).slice(0, 2048))
+      .first();
+    return row?.source_text === sourceText ? String(row.article_hu || "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+async function storeGeneratedArticle(db, articleId, sourceText, articleText) {
+  if (!db || !articleId || !articleText) return;
+  try {
+    await db.prepare(`INSERT INTO generated_articles (article_id, source_text, article_hu, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(article_id) DO UPDATE SET source_text = excluded.source_text,
+      article_hu = excluded.article_hu, updated_at = CURRENT_TIMESTAMP`)
+      .bind(String(articleId).slice(0, 2048), sourceText, articleText)
+      .run();
+  } catch (error) {
+    console.error("Generated article cache error", error);
+  }
+}
+
+async function getOrGenerateCikk10(env, articleId, title, source, desc, url) {
+  const sourceText = `${title}\n${source}\n${desc}`.slice(0, 6000);
+  const cached = await getCachedGeneratedArticle(env?.DB, articleId, sourceText);
+  if (cached) return { text: cached, generated: true, cached: true };
+  if (!env?.AI || typeof env.AI.run !== "function") {
+    return { text: desc || "A cikk szövege átmenetileg nem érhető el.", generated: false, cached: false };
+  }
+  const messages = [
+        {
+          role: "system",
+          content: "Tapasztalt magyar közéleti szerkesztő vagy. Kizárólag a megadott címre, forrásra és RSS-leadre támaszkodj. Ne találj ki tényt, idézetet, számot vagy hátteret. Ha valami nem ismert, ezt világosan jelezd. Írj természetes, igényes magyar nyelven, pártpropaganda, gúny, ellenségképzés és kattintásvadászat nélkül. Ne írj címet a szöveg elé, és ne használj markdown jelöléseket."
+        },
+        {
+          role: "user",
+          content: `Készíts Nemzeti Minimumok CIKK1.0 cikket.\n\nCím: ${title}\nForrás: ${source}\nRSS-lead: ${desc || "Nincs elérhető lead."}\nEredeti link: ${url || "Nincs."}\n\nSzerkezet: emberi kiindulópont; a történet tényei; óvatos kontextus; lehetséges társadalmi következmények; közös tanulság; a végén egy természetes, gondolkodtató kérdés, amely „Szerinted” szóval kezdődik. Mutasd meg, miért lehet fontos a hír és kiket érinthet, de a leadből nem következő állítást ne tényként közöld. Terjedelem: körülbelül 3000–3800 karakter.`
+        }
+      ];
+  let lastError = null;
+  const generationAttempts = [
+    { model: "@cf/meta/llama-3.1-8b-instruct", maxTokens: 512 },
+    { model: "@cf/meta/llama-3.1-8b-instruct", maxTokens: 256 },
+    { model: "@cf/meta/llama-3.2-3b-instruct", maxTokens: 512 }
+  ];
+  for (const attempt of generationAttempts) {
+    try {
+      const result = await env.AI.run(attempt.model, {
+        messages,
+        temperature: 0.25,
+        max_tokens: attempt.maxTokens
+      });
+      const text = String(result?.response || result?.text || result?.generated_text || "").trim();
+      if (!text) throw new Error("Üres CIKK1.0 válasz");
+      await storeGeneratedArticle(env.DB, articleId, sourceText, text);
+      return { text, generated: true, cached: false };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.error("Workers AI CIKK1.0 generation error", lastError);
+  return { text: "A CIKK1.0 cikk generálása átmenetileg nem sikerült. Kérjük, frissítsd az oldalt néhány másodperc múlva.", generated: false, cached: false };
+}
+
+async function renderArticlePage(pageUrl, db, env = {}) {
+  const isEditor = pageUrl.searchParams.get("view") === "editor";
+  const requestedId = String(pageUrl.searchParams.get("id") || "").trim();
+  const allItems = await loadAllItems();
+  const matchedItem = requestedId
+    ? allItems.find((item) => !item.error && rssArticleId(item) === requestedId)
+    : null;
+  const title = matchedItem?.title || pageUrl.searchParams.get("title") || "";
+  const source = matchedItem?.source || pageUrl.searchParams.get("source") || "";
+  const url = safeExternalUrl(matchedItem?.link || pageUrl.searchParams.get("url"));
+  const desc = matchedItem?.description || pageUrl.searchParams.get("desc") || "";
+  const image = safeExternalUrl(matchedItem?.image || pageUrl.searchParams.get("image"));
+  const articleId = requestedId || url || title;
+  if (!title && !url) return renderNotFound();
+  await safeLogEvent(db, "page_view");
+  await safeLogEvent(db, "article_view", articleId);
+  const articleViewCount = await getArticleViewCount(db, articleId);
+  const related = findRelatedItems(`${title} ${desc}`, url, allItems).slice(0, 5);
+  const articleTextHu = desc || "Az RSS-forrás jelenleg nem adott részletes összefoglalót ehhez a hírhez. Az eredeti cikk a forráslinken olvasható.";
+  const readingTime = estimateReadingTime(`${title} ${articleTextHu}`);
+  const tags = generateTopicTags(`${title} ${desc}`);
+  const promptBase = makeInternalUrl("/prompt", { title, url, source, view: "editor" });
+  const canonicalArticle = `${PUBLIC_ORIGIN}${makeInternalUrl("/article", requestedId ? { id: requestedId } : { title: compactTitleForUrl(title), source, url })}`;
+  const socialImage = image || `${PUBLIC_ORIGIN}/article-background.jpg`;
+  const sourceUrl = url ? makeInternalUrl("/go", { url, id: url }) : "";
+  const articleBackground = image || topicFallbackImage(title, source || "Közélet", tags);
+  const publishUrl = makeInternalUrl("/editor/publish", { title, body: articleTextHu, sourceUrl: url });
+
+  let html = `<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escapeHtml(title || "NM cikk")}</title>
+  <meta name="description" content="${escapeHtml(shorten(desc || title, 155))}">
+  <meta name="robots" content="${isEditor ? "noindex,nofollow" : "index,follow"}">
+  <link rel="canonical" href="${escapeHtml(canonicalArticle)}">
+  <link rel="icon" href="/favicon.jpg" type="image/jpeg">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="hu_HU">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(shorten(desc || title, 180))}">
+  <meta property="og:url" content="${escapeHtml(canonicalArticle)}">
+  <meta property="og:image" content="${escapeHtml(socialImage)}">
+  <meta property="og:image:secure_url" content="${escapeHtml(socialImage)}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(shorten(desc || title, 180))}">
+  <meta name="twitter:image" content="${escapeHtml(socialImage)}">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("nm-theme")||"dark"}catch(error){document.documentElement.dataset.theme="dark"}</script>
+  <style>${NM_HEADER_HARD_FIX_CSS}${ARTICLE_CSS}${TAG_CSS}${PUBLIC_TEST_CSS}${ANALYTICS_CSS}${LAYOUT_842_CSS}${HEADER_FOOTER_843_CSS}${ARTICLE_COUNTER_850_CSS}${HEADER_LOGO_852_CSS}${THEME_SWITCH_853_CSS}${ARTICLE_THEME_870_CSS}${LIVE_NEWS_870_CSS}${HEADER_REFINEMENT_871_CSS}${SITE_MENU_880_CSS}${PAGE_WIDTH_880_CSS}${NM_ARTICLES_890_CSS}${MENU_SECURITY_810_CSS}${UI_812_CSS}${UI_814_CSS}${UI_815_CSS}${UI_820_CSS}${UI_821_CSS}${UI_822_CSS}${UI_823_CSS}${UI_824_CSS}${UI_825_CSS}${UI_826_CSS}${UI_900_CSS}</style>
+</head>
+<body class="article-page">
+  <div class="article-page-background${image ? "" : " nm-background"}" aria-hidden="true">
+    <img src="${escapeHtml(articleBackground)}" alt="">
+    <span></span>
+  </div>
+  ${renderCompactHeader(isEditor)}
+  <main class="article-content" data-article-id="${escapeHtml(articleId)}">
+  <h1>${escapeHtml(title)}</h1>
+  <div class="meta">Forrás: ${escapeHtml(source)} · Olvasási idő: ${readingTime} perc</div>
+  ${tags.length ? `<div class="tags">${tags.map((tag) =>
+    `<a class="tag" href="${escapeHtml(makeInternalUrl(isEditor ? "/editor" : "/", { tag }))}">${escapeHtml(tag)}</a>`
+  ).join("")}</div>` : ""}
+  <article class="article-lead article-body article-summary-hu" data-full-text="${escapeHtml(articleTextHu)}">
+    <div class="ai-article-label">RSS-forrásösszegzés</div>
+    <div class="article-body-text">${escapeHtml(articleTextHu)}</div>
+  </article>
+  <article class="article-lead article-body article-summary-en" lang="en" hidden></article>
+  <section class="box">
+    ${isEditor ? "<h3>NM admin eszközök</h3>" : ""}
+    <div class="article-actions">
+    ${sourceUrl ? `<a class="btn" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Eredeti cikk megnyitása</a>` : ""}
+    ${isEditor ? `
+    <a class="btn btn-secondary" href="${escapeHtml(`${promptBase}&type=cikk`)}">📝 CIKK1.0 prompt</a>
+    <a class="btn btn-secondary" href="${escapeHtml(`${promptBase}&type=hangcikk`)}">🎧 HANGCIKK1.0 prompt</a>
+    <a class="btn btn-secondary" href="${escapeHtml(`${promptBase}&type=kep`)}">🖼 Cikkkép prompt</a>
+    <a class="btn btn-secondary" href="${escapeHtml(publishUrl)}">📰 NM cikk publikálása</a>
+    ` : ""}
+    <a class="btn btn-secondary" href="/#nm-articles">🛡️ NM cikkek</a>
+    ${isEditor ? `<button class="btn btn-secondary article-translate" type="button" aria-pressed="false" onclick="toggleArticleSummary(this)">🌐 English version</button>` : ""}
+    <button class="btn btn-secondary" type="button" onclick="sharePage()">↗ Megosztás</button>
+    </div>
+  </section>
+  <section class="box">
+    <h3>Kapcsolódó hírek</h3><div class="related-grid">`;
+
+  if (!related.length) {
+    html += '<p class="meta">Most nincs egyértelmű kapcsolódó hír a beolvasott RSS-ek között.</p>';
+  } else {
+    for (const item of related) html += renderRelatedCard(item, isEditor);
+  }
+
+  html += `</div></section>
+  <a class="back home-back article-end-home" href="/"><span class="home-icon">🏠</span><span>Főoldal</span></a>
+  <div class="article-view-counter" aria-label="Cikkmegtekintések">👁 Cikkmegtekintések: <strong>${formatCounter(articleViewCount)}</strong></div>
+  </main>
+  ${renderSiteFooter(isEditor)}
+  <script>
+    async function sharePage() {
+      if (navigator.share) await navigator.share({ title: document.title, url: location.href });
+      else { await navigator.clipboard.writeText(location.href); alert("A link a vágólapra került."); }
+    }
+    function shareFacebook(url) {
+      if (navigator.share) {
+        navigator.share({ title: document.title, url }).catch(async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            alert("A link a vágólapra került. Nyisd meg Facebookban és illeszd be a posztba.");
+          } catch (error) {
+            location.href = "https://www.facebook.com/sharer/sharer.php?u=" + encodeURIComponent(url);
+          }
+        });
+        return;
+      }
+      window.open("https://www.facebook.com/sharer/sharer.php?u=" + encodeURIComponent(url), "_blank", "noopener,noreferrer,width=720,height=620");
+    }
+    async function toggleArticleSummary(button) {
+      const hu = document.querySelector(".article-summary-hu");
+      const en = document.querySelector(".article-summary-en");
+      if (!hu || !en) return;
+      if (!en.hidden) {
+        en.hidden = true;
+        hu.hidden = false;
+        button.textContent = "🌐 English version";
+        button.setAttribute("aria-pressed", "false");
+        return;
+      }
+      if (en.dataset.loaded !== "true") {
+        button.disabled = true;
+        button.textContent = "Translating…";
+        try {
+          const response = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: hu.dataset.fullText || hu.textContent,
+              articleId: document.querySelector(".article-content")?.dataset.articleId || ""
+            })
+          });
+          const data = await response.json();
+          if (!response.ok || !data.translation) throw new Error(data.error || "Az angol fordítás nem sikerült.");
+          en.textContent = data.translation;
+          en.dataset.loaded = "true";
+          en.classList.remove("summary-error");
+        } catch (error) {
+          en.textContent = error.message || "Az angol fordítás átmenetileg nem érhető el.";
+          en.classList.add("summary-error");
+        } finally {
+          button.disabled = false;
+        }
+      }
+      hu.hidden = true;
+      en.hidden = false;
+      button.textContent = "🇭🇺 Magyar cikk";
+      button.setAttribute("aria-pressed", "true");
+    }
+    function updateThemeToggle() {
+      const dark = document.documentElement.dataset.theme !== "light";
+      document.querySelectorAll(".theme-slider").forEach((button) => {
+        button.setAttribute("aria-checked", String(dark));
+        button.setAttribute("aria-label", dark ? "Sötét mód bekapcsolva" : "Világos mód bekapcsolva");
+        button.title = dark ? "Váltás világos módra" : "Váltás sötét módra";
+      });
+      document.querySelectorAll(".theme-control,.daily-theme-box").forEach((control) => {
+        control.dataset.mode = dark ? "dark" : "light";
+      });
+    }
+    function toggleTheme() {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("nm-theme", next); } catch (error) {}
+      updateThemeToggle();
+    }
+    updateThemeToggle();
+  </script>
+</body>
+</html>`;
+  return htmlResponse(html);
+}
+
+function renderRelatedCard(item, isEditor = false) {
+  const articleUrl = makeInternalUrl("/article", {
+    id: rssArticleId(item),
+    view: isEditor ? "editor" : "public"
+  });
+  return `<div class="related-card">
+    <img class="related-thumb${item.image ? "" : " related-thumb-fallback"}" src="${escapeHtml(item.image || "/article-background.jpg")}" alt="${item.image ? "" : "Nemzeti Minimumok"}" loading="lazy">
+    <div><a href="${escapeHtml(articleUrl)}">${escapeHtml(item.title)}</a>
+    <div class="related-meta">${escapeHtml(item.source)} · ${escapeHtml(formatArticleDate(item.pubDate))}</div></div>
+  </div>`;
+}
+
+function renderPromptPage(pageUrl) {
+  const isEditor = pageUrl.searchParams.get("view") === "editor";
+  const type = pageUrl.searchParams.get("type") || "cikk";
+  const title = pageUrl.searchParams.get("title") || "";
+  const source = pageUrl.searchParams.get("source") || "";
+  const link = safeExternalUrl(pageUrl.searchParams.get("url"));
+  const sourceUrl = link ? makeInternalUrl("/go", { url: link, id: link }) : "";
+  const prompt = buildPrompt(type, title, source, link);
+  const label = getPromptLabel(type);
+
+  return htmlResponse(`<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(label)} – NM Prompt</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" href="/favicon.jpg" type="image/jpeg">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("nm-theme")||"dark"}catch(error){document.documentElement.dataset.theme="dark"}</script>
+  <style>${NM_HEADER_HARD_FIX_CSS}${PROMPT_CSS}${HEADER_CSS}${BRAND_ASSET_CSS}${HEADER_FOOTER_843_CSS}${HEADER_REFINEMENT_871_CSS}${SITE_MENU_880_CSS}${THEME_SWITCH_853_CSS}${MENU_SECURITY_810_CSS}${UI_812_CSS}${UI_814_CSS}${UI_821_CSS}${UI_823_CSS}${UI_825_CSS}${UI_900_CSS}</style>
+</head>
+<body class="prompt-page">
+  ${renderCompactHeader(isEditor)}
+  <main class="prompt-content">
+  <h1>${escapeHtml(label)}</h1>
+  <div class="box">
+    <div class="meta"><strong>Hír:</strong> ${escapeHtml(title)}</div>
+    <div class="meta"><strong>Forrás:</strong> ${escapeHtml(source)}</div>
+    <div class="meta"><strong>Link:</strong> ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a>` : "nincs"}</div>
+  </div>
+  <button class="btn" type="button" onclick="copyPrompt()">Prompt másolása</button>
+  <a class="btn btn-secondary" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">ChatGPT megnyitása</a>
+  ${sourceUrl ? `<a class="btn btn-secondary" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Forrás megnyitása</a>` : ""}
+  <a class="btn btn-secondary" href="/">🏠 Főoldal</a>
+  <div class="notice">Használat: Prompt másolása → ChatGPT megnyitása → beillesztés.</div>
+  <textarea id="promptText" readonly>${escapeHtml(prompt)}</textarea>
+  </main>
+  <script>
+    async function copyPrompt() {
+      const text = document.getElementById("promptText").value;
+      try { await navigator.clipboard.writeText(text); }
+      catch { const area = document.getElementById("promptText"); area.select(); document.execCommand("copy"); }
+      alert("Prompt kimásolva!");
+    }
+    function updateThemeToggle(){const dark=document.documentElement.dataset.theme!=="light";document.querySelectorAll(".theme-slider").forEach(button=>{button.setAttribute("aria-checked",String(dark));button.setAttribute("aria-label",dark?"Sötét mód bekapcsolva":"Világos mód bekapcsolva")});document.querySelectorAll(".theme-control").forEach(control=>{control.dataset.mode=dark?"dark":"light"})}
+    function toggleTheme(){const next=document.documentElement.dataset.theme==="light"?"dark":"light";document.documentElement.dataset.theme=next;try{localStorage.setItem("nm-theme",next)}catch(error){}updateThemeToggle()}
+    updateThemeToggle();
+  </script>
+</body>
+</html>`);
+}
+
+function buildPrompt(type, title, source, link) {
+  if (type === "hangcikk") return buildHangcikkPrompt(title, source, link);
+  if (type === "kep") return buildImagePrompt(title, source, link);
+  if (type === "reel") return buildReelPrompt(title, source, link);
+  if (type === "narrativa") return buildNarrativePrompt(title, source, link);
+  return buildCikkPrompt(title, source, link);
+}
+
+function buildCikkPrompt(title, source, link) {
+  return `CIKK1.0
+
+Írj Facebookra szánt Nemzeti Minimumok stílusú közéleti cikket az alábbi hír alapján.
+
+Hír címe: ${title}
+Forrás: ${source}
+Link: ${link}
+
+Feladat: Végezz háttérkutatást, értelmezd a hírt, majd írj CIKK1.0 formátumú cikket.
+
+Stílus: emberközpontú, nyugodt, közérthető, konstruktív, magyarázó, nem propagandisztikus, nem gúnyos és nem kioktató.
+
+Szerkezet: Ember → Történet → Kontextus → Következmények → Tanulság → Kérdés
+
+Kötelező elemek:
+- Miért fontos ez most?
+- Kik érzik meg a hatását?
+- Mit nyerhetünk vagy mit veszíthetünk?
+- Jelenjen meg természetesen a közös asztal, közös valóság, bizalom vagy nemzeti minimum gondolatvilága.
+- A végén legyen természetes, gondolkodtató kérdés.
+
+Fontos: Ne használd a „Te szerinted” kifejezést. Helyette mindig: „Szerinted”.
+Hossz: 3000–3800 karakter.
+Kerüld: pártpropaganda, sértegetés, ellenségképzés, kattintásvadász túlzás, AI-s sablonszöveg.`;
+}
+
+
+function buildHangcikkPrompt(title, source, link) {
+  return `HANGCIKK1.0
+
+Írj a megadott Nemzeti Minimumok cikkből felolvasásra optimalizált hangoscikk-szöveget.
+
+Cél:
+A szöveg ne sima felolvasott cikk legyen, hanem természetes, rádiós hangulatú, emberközpontú hanganyag. Olyan legyen, mintha egy nyugodt, közérthető narrátor magyarázná el a témát vezetés, munka vagy séta közben hallgató embereknek.
+
+Stílus:
+- nyugodt
+- emberközpontú
+- közérthető
+- beszélt nyelvhez igazított
+- konstruktív
+- nem propagandisztikus
+- nem gúnyos
+- nem kioktató
+- természetes, meleg hangú
+- Nemzeti Minimumok-hangulatú
+
+Szerkezet:
+1. Rövid nyitó hook 1-2 mondatban
+2. Miről szól a hír?
+3. Miért fontos ez most?
+4. Kit érint ez emberileg?
+5. Mi a tágabb társadalmi vagy közéleti tanulság?
+6. Rövid, természetes lezáró gondolat
+7. Egy gondolkodtató záró kérdés
+
+Hossz:
+- 450–700 szó
+- kb. 3–5 perc felolvasva
+
+Formai szabályok:
+- rövidebb mondatok
+- természetes beszédritmus
+- ne legyen túl sok adat egymás után
+- a nehéz számokat magyarázd emberi nyelven
+- ahol kell, bontsd levegővételnyi egységekre
+- ne használj linkeket
+- ne használj forráshivatkozást a szövegben
+- ne legyen cím, alcím, felsorolás
+- csak a felolvasandó szöveget add vissza
+
+Hang:
+Úgy szóljon, mintha a Nemzeti Minimumok „közös asztal” hangja beszélne. Nem pártpolitikai harcosként, nem újságírói hidegséggel, hanem egy nyugodt narrátorként, aki segít megérteni, mi történik körülöttünk.
+
+Kezdő formula lehet, de nem kötelező:
+„Ez itt a Nemzeti Minimumok hangoscikke.”
+
+Zárás:
+A végén természetesen térjen vissza a közös valóság, közös asztal, bizalom vagy nemzeti minimum gondolatához.
+
+Kapcsolódó hír:
+${title}
+
+Forrás:
+${source}
+
+Link:
+${link}
+
+Forrásszöveg:
+[IDE ILLESZD A CIKKET]`;
+}
+function buildImagePrompt(title, source, link) {
+  return `Készíts NM cikkkép promptot ehhez a hírhez.
+
+Hír címe: ${title}
+Forrás: ${source}
+Link: ${link}
+
+Feladat: Készíts 9:16 álló Facebook/Reels-kompatibilis Nemzeti Minimumok posztképet.
+
+Stílus:
+- sötét, prémium politikai news poszter
+- piros-fehér-zöld liquid glass keret
+- NM logó felül
+- fotórealisztikus főszereplő vagy témakép
+- kevés, erős hook szöveg: 2–5 szó
+- ne legyen AI-hatású vagy túlzsúfolt
+- Facebookon legyen görgetésmegállító
+
+Adj rövid hook feliratot, teljes képgeneráló promptot és alternatív headline-okat.`;
+}
+
+function buildReelPrompt(title, source, link) {
+  return `Készíts Reel/Shorts videótervet ehhez a hírhez.
+
+Hír címe: ${title}
+Forrás: ${source}
+Link: ${link}
+
+Feladat: Készíts 30–60 másodperces, 9:16 videótervet Nemzeti Minimumok stílusban.
+
+Legyen benne: első 3 másodperces erős hook, jelenetbontás, képernyőfeliratok, narrációs szöveg, záró gondolat és természetes kérdés a végén.
+
+Stílus: nyugodt, közérthető, emberközpontú, közös valóságra építő. Ne legyen propaganda, gúnyos vagy kattintásvadász.`;
+}
+
+function buildNarrativePrompt(title, source, link) {
+  return `Készíts „Narratívák csatája” elemzést ehhez a hírhez.
+
+Hír címe: ${title}
+Forrás: ${source}
+Link: ${link}
+
+Feladat: Mutasd be röviden, hogyan értelmezheti a hírt két oldal.
+
+Szerkezet:
+1. Az egyik oldal szerint
+2. A másik olvasat szerint
+3. Mi következhet?
+4. Mit nem tudunk még?
+5. Nemzeti Minimum
+
+Stílus: tárgyilagos, közérthető, nyugodt, nem uszító. Készíts hozzá carousel/infografika promptot is NM narratíva stílusban.`;
+}
+
+function getPromptLabel(type) {
+  if (type === "hangcikk") return "🎧 HANGCIKK1.0 prompt";
+  if (type === "kep") return "🖼 Cikkkép prompt";
+  if (type === "reel") return "🎥 Reel prompt";
+  if (type === "narrativa") return "⚔️ Narratíva prompt";
+  return "📝 CIKK1.0 prompt";
+}
+
+function scoreKeywords(text) {
+  const lower = String(text).toLowerCase();
+  let score = PRIORITY_KEYWORDS.reduce((sum, keyword) => sum + (lower.includes(keyword) ? 10 : 0), 0);
+  if (lower.includes("magyar péter")) score += 25;
+  if (lower.includes("orbán viktor")) score += 25;
+  if (lower.includes("tisza párt")) score += 25;
+  if (lower.includes("toroczkai lászló")) score += 20;
+  if (lower.includes("mi hazánk")) score += 20;
+  if (lower.includes("brüsszel")) score += 15;
+  if (lower.includes("üzemanyagár")) score += 15;
+  return score;
+}
+
+function scoreCikk10(text) {
+  const lower = String(text).toLowerCase();
+  let score = CIKK10_KEYWORDS.reduce((sum, keyword) => sum + (lower.includes(keyword) ? 10 : 0), 0);
+  const bonuses = [
+    ["magyar péter", 25], ["orbán viktor", 20], ["toroczkai lászló", 20], ["mi hazánk", 20], ["alkotmánybíróság", 20],
+    ["közpénz", 20], ["korrupció", 20], ["egészségügy", 20], ["oktatás", 20]
+  ];
+  for (const [keyword, bonus] of bonuses) if (lower.includes(keyword)) score += bonus;
+  return score;
+}
+
+function scoreSocialImpact(text) {
+  const lower = String(text).toLowerCase();
+  let score = 0;
+  for (const rule of SOCIAL_IMPACT_RULES) {
+    if (rule.keywords.some((keyword) => lower.includes(keyword))) score += rule.weight;
+  }
+  return Math.min(35, score);
+}
+
+function scoreFreshness(pubDate) {
+  if (!pubDate) return 0;
+  const timestamp = new Date(pubDate).getTime();
+  if (Number.isNaN(timestamp)) return 0;
+  const hours = Math.max(0, (Date.now() - timestamp) / 3_600_000);
+  if (hours <= 2) return 30;
+  if (hours <= 6) return 24;
+  if (hours <= 12) return 18;
+  if (hours <= 24) return 12;
+  if (hours <= 48) return 6;
+  return 0;
+}
+
+function itemAgeHours(pubDate) {
+  if (!pubDate) return 9999;
+  const timestamp = new Date(pubDate).getTime();
+  if (Number.isNaN(timestamp)) return 9999;
+  return Math.max(0, (Date.now() - timestamp) / 3_600_000);
+}
+
+function findRelatedItems(currentText, currentUrl, allItems) {
+  const currentWords = importantWords(currentText);
+  const currentTags = new Set(generateTopicTags(currentText));
+  return allItems
+    .filter((item) => !item.error && item.link !== currentUrl)
+    .map((item) => {
+      const itemWords = importantWords(`${item.title} ${item.description || ""}`);
+      let matches = 0;
+      for (const word of currentWords) if (itemWords.has(word)) matches++;
+      const tagMatches = (item.tags || []).filter((tag) => currentTags.has(tag)).length;
+      return { ...item, relatedScore: matches * 2 + tagMatches * 3, tagMatches };
+    })
+    .filter((item) => item.relatedScore >= 3)
+    .sort((a, b) => b.relatedScore - a.relatedScore || b.score - a.score);
+}
+
+function importantWords(text) {
+  const stopwords = new Set([
+    "hogy", "mint", "mert", "vagy", "és", "egy", "van", "volt", "lesz", "szerint",
+    "után", "előtt", "már", "nem", "csak", "aki", "ami", "az", "is", "ezt", "arra"
+  ]);
+  return new Set(
+    String(text).toLowerCase().replace(/[^a-z0-9áéíóöőúüű\s]/g, " ").split(/\s+/)
+      .filter((word) => word.length >= 4 && !stopwords.has(word))
+  );
+}
+
+function estimateReadingTime(text) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 180));
+}
+
+function generateTopicTags(text) {
+  const lower = String(text || "").toLowerCase();
+  const rules = [
+    ["Magyar Péter", ["magyar péter"]],
+    ["Orbán Viktor", ["orbán viktor", "orbán"]],
+    ["Tisza Párt", ["tisza párt", "tisza"]],
+    ["Toroczkai László", ["toroczkai lászló", "toroczkai"]],
+    ["Mi Hazánk", ["mi hazánk"]],
+    ["Brüsszel / EU", ["brüsszel", "európai unió"]],
+    ["Üzemanyagár", ["üzemanyagár", "benzin", "gázolaj", "mol"]],
+    ["Alkotmány / jogállam", ["alkotmány", "alkotmánybíróság", "jogállam"]],
+    ["Közpénz / korrupció", ["közpénz", "korrupció", "közbeszerzés"]],
+    ["Egészségügy", ["egészségügy", "kórház", "orvos"]],
+    ["Oktatás", ["oktatás", "iskola", "tanár"]],
+    ["Gazdaság", ["gazdaság", "infláció", "forint", "adó", "költségvetés"]]
+  ];
+  return rules
+    .filter(([, keywords]) => keywords.some((keyword) => lower.includes(keyword)))
+    .map(([tag]) => tag)
+    .slice(0, 5);
+}
+
+function collectTagCounts(items) {
+  const counts = new Map();
+  for (const item of items) {
+    for (const tag of item.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, "hu"));
+}
+
+function getTag(xml, tag) {
+  const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(xml).match(new RegExp(`<${escapedTag}\\b[^>]*>([\\s\\S]*?)<\\/${escapedTag}>`, "i"));
+  return match ? match[1] : "";
+}
+
+function extractImage(raw) {
+  const patterns = [
+    /<enclosure\b[^>]*\burl=["']([^"']+)["'][^>]*>/i,
+    /<media:content\b[^>]*\burl=["']([^"']+)["'][^>]*>/i,
+    /<media:thumbnail\b[^>]*\burl=["']([^"']+)["'][^>]*>/i,
+    /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i
+  ];
+  for (const pattern of patterns) {
+    const match = String(raw).match(pattern);
+    if (match) return safeExternalUrl(decodeEntities(match[1]));
+  }
+  return "";
+}
+
+function cleanText(text) {
+  return decodeEntities(String(text || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")).trim();
+}
+
+function decodeEntities(text) {
+  const named = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " " };
+  return String(text)
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, number) => String.fromCodePoint(parseInt(number, 10)))
+    .replace(/&([a-z]+);/gi, (match, name) => named[name.toLowerCase()] ?? match);
+}
+
+function stripHtml(text) {
+  return String(text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function sanitizeRssSummary(text, title = "") {
+  const clean = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/\b(\S.{20,180}?)(?:\s+\1\b)+/gi, "$1")
+    .trim();
+  if (!clean) return "";
+  const titleClean = String(title || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const sentences = clean
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const unique = [];
+  for (const sentence of sentences) {
+    const key = sentence.toLowerCase().replace(/[^a-z0-9áéíóöőúüű]+/gi, " ").trim();
+    if (!key || seen.has(key)) continue;
+    if (titleClean && key === titleClean) continue;
+    seen.add(key);
+    unique.push(sentence);
+    if (unique.join(" ").length >= 360) break;
+  }
+  const summary = unique.length ? unique.join(" ") : clean;
+  return shortenSmart(summary, 360);
+}
+
+function shortenSmart(text, maxLength) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (clean.length <= maxLength) return clean;
+  const slice = clean.slice(0, maxLength + 1);
+  const sentenceEnd = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("! "), slice.lastIndexOf("? "));
+  if (sentenceEnd >= Math.floor(maxLength * 0.45)) return slice.slice(0, sentenceEnd + 1).trim();
+  const commaEnd = Math.max(slice.lastIndexOf(", "), slice.lastIndexOf("; "), slice.lastIndexOf(": "));
+  if (commaEnd >= Math.floor(maxLength * 0.62)) return `${slice.slice(0, commaEnd).trim()}…`;
+  const wordEnd = slice.lastIndexOf(" ");
+  return `${slice.slice(0, wordEnd > 40 ? wordEnd : maxLength).trim()}…`;
+}
+
+function shorten(text, maxLength) {
+  const clean = String(text || "").trim();
+  return clean.length <= maxLength ? clean : `${clean.slice(0, maxLength).trim()}…`;
+}
+
+function simpleKey(text) {
+  return String(text).toLowerCase().replace(/[^a-z0-9áéíóöőúüű\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function makeInternalUrl(path, params) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) search.set(key, String(value || ""));
+  return `${path}?${search.toString()}`;
+}
+
+function safeExternalUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(String(value));
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeArticleImageInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(raw) && raw.length <= 950_000) return raw;
+  return safeExternalUrl(raw);
+}
+
+function renderVideoEmbed(value) {
+  const url = safeExternalUrl(value);
+  if (!url) return "";
+  let embedUrl = "";
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "youtu.be") {
+      const id = parsed.pathname.split("/").filter(Boolean)[0] || "";
+      if (id) embedUrl = `https://www.youtube.com/embed/${encodeURIComponent(id)}`;
+    } else if (host.endsWith("youtube.com")) {
+      const id = parsed.searchParams.get("v") || parsed.pathname.split("/").filter(Boolean).pop() || "";
+      if (id) embedUrl = `https://www.youtube.com/embed/${encodeURIComponent(id)}`;
+    } else if (host.endsWith("facebook.com") || host.endsWith("fb.watch")) {
+      embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&width=734`;
+    }
+  } catch {
+    embedUrl = "";
+  }
+  if (embedUrl) {
+    return `<section class="box video-embed-box"><h3>Beágyazott videó</h3><div class="video-frame"><iframe src="${escapeHtml(embedUrl)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div></section>`;
+  }
+  return `<section class="box video-embed-box"><h3>Beágyazott videó</h3><a class="btn btn-secondary" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Videó megnyitása</a><p class="meta">TikTok vagy nem támogatott videólink esetén a videó új lapon nyílik meg.</p></section>`;
+}
+
+function topicFallbackImage(title = "", category = "", tags = []) {
+  const source = `${title} ${category} ${Array.isArray(tags) ? tags.join(" ") : ""}`.toLowerCase();
+  const rules = [
+    [["gazdaság", "infláció", "forint", "adó", "költségvetés", "portfolio"], "economy,finance,budapest"],
+    [["oktatás", "iskola", "tanár"], "education,classroom"],
+    [["egészségügy", "kórház", "orvos"], "hospital,healthcare"],
+    [["vasút", "máv", "közlekedés"], "train,railway"],
+    [["brüsszel", "eu", "európai unió"], "european-union,brussels"],
+    [["választás", "parlament", "kormány", "orbán", "magyar péter", "tisza", "mi hazánk", "toroczkai"], "hungary,parliament,politics"],
+    [["korrupció", "közpénz", "nyomozás", "ügyészség", "bíróság"], "investigation,documents"],
+    [["külföld", "háború", "világ"], "world-news,city"],
+    [["sport", "vb", "foci", "labdarúgás"], "football,stadium"]
+  ];
+  const match = rules.find(([keywords]) => keywords.some((keyword) => source.includes(keyword)));
+  const query = match ? match[1] : "hungary,news,city";
+  return `https://source.unsplash.com/1200x800/?${encodeURIComponent(query)}`;
+}
+
+function absolutePublicUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.startsWith("data:")) return `${PUBLIC_ORIGIN}/channel-logo.jpg`;
+  if (raw.startsWith("/")) return `${PUBLIC_ORIGIN}${raw}`;
+  return safeExternalUrl(raw) || `${PUBLIC_ORIGIN}/channel-logo.jpg`;
+}
+
+function compactTitleForUrl(value, maxLength = 110) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  if (clean.length <= maxLength) return clean;
+  const shortened = clean.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
+  return shortened || clean.slice(0, maxLength).trim();
+}
+
+function formatCounter(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "-";
+  return new Intl.NumberFormat("hu-HU").format(Number(value));
+}
+
+function formatArticleDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).replace(/\s[+-]\d{4}\s*$/, "").trim();
+  return new Intl.DateTimeFormat("hu-HU", {
+    timeZone: "Europe/Budapest",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit"
+  }).format(date);
+}
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderRobotsTxt() {
+  const body = `User-agent: *
+Allow: /
+Disallow: /editor
+Disallow: /prompt
+Disallow: /*?view=editor
+Sitemap: ${PUBLIC_ORIGIN}/sitemap.xml
+`;
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/plain; charset=UTF-8",
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+function renderSitemapXml() {
+  const lastModified = new Date().toISOString().slice(0, 10);
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${PUBLIC_ORIGIN}/</loc><lastmod>${lastModified}</lastmod><changefreq>hourly</changefreq><priority>1.0</priority></url>
+</urlset>`;
+  return new Response(xml, {
+    headers: {
+      "Content-Type": "application/xml; charset=UTF-8",
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+function renderHealthCheck() {
+  return new Response(JSON.stringify({ status: "ok", version: VERSION }), {
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+function renderNotFound() {
+  return new Response(`<!DOCTYPE html><html lang="hu"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Az oldal nem található</title></head><body style="background:#111;color:#fff;font-family:Arial;padding:40px"><h1>404</h1><p>Az oldal nem található.</p><a href="/" style="color:#ff8080">🏠 Főoldal</a></body></html>`, {
+    status: 404,
+    headers: {
+      "Content-Type": "text/html; charset=UTF-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY"
+    }
+  });
+}
+
+function htmlResponse(html) {
+  return new Response(html, {
+    headers: {
+      "Content-Type": "text/html; charset=UTF-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "X-Frame-Options": "DENY",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+      "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+      "Content-Security-Policy": "upgrade-insecure-requests; block-all-mixed-content"
+    }
+  });
+}
+
+const TAG_CSS = `
+.topic-filters{display:flex;gap:7px;overflow-x:auto;padding:0 0 12px;scrollbar-width:thin}.topic-filter{flex:none;color:#ccc;background:#1c1c1c;border:1px solid #3b3b3b;border-radius:999px;padding:6px 9px;text-decoration:none;font-size:12px}.topic-filter span{color:#888}.topic-filter:hover,.topic-filter-active{color:#fff;border-color:#ff4040;background:#321818}.topic-filter-clear{color:#ff9a9a}.card-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px}.card-tags a{color:#9ab9df;text-decoration:none;font-size:11px}.card-tags a:hover{color:#ff8080}.tag{text-decoration:none}`;
+
+const HEADER_CSS = `
+.site-header{align-items:center;background:linear-gradient(135deg,#202020 0%,#171717 58%,#251313 100%);border:1px solid #343434;border-radius:18px;box-shadow:0 12px 30px rgba(0,0,0,.22);padding:16px 18px;position:relative;overflow:hidden}.site-header:after{content:"";position:absolute;right:-45px;top:-80px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(255,64,64,.14),transparent 68%);pointer-events:none}.brand{display:flex;align-items:center;gap:14px;min-width:0;position:relative;z-index:1}.channel-logo{width:58px;height:58px;border-radius:16px;flex:none;box-shadow:0 7px 18px rgba(0,0,0,.38)}.brand-copy{min-width:0}.brand-name{color:#f1f1f1;font-size:13px;font-weight:800;letter-spacing:2.4px;line-height:1.1}.site-header h1{color:#fff;font-size:29px;line-height:1;margin:5px 0 6px;letter-spacing:-.7px}.site-header .version{color:#858585;font-size:11px}.site-header .view-switch{align-self:center;position:relative;z-index:1;background:rgba(17,17,17,.72);backdrop-filter:blur(8px)}@media(max-width:600px){.site-header{padding:13px 14px;border-radius:15px}.channel-logo{width:50px;height:50px;border-radius:14px}.brand{gap:11px}.brand-name{font-size:10px;letter-spacing:1.8px}.site-header h1{font-size:24px;margin:4px 0}.site-header .view-switch{margin:12px 0 0 61px}.site-header .version{font-size:10px}}`;
+
+const BRAND_ASSET_CSS = `
+.channel-logo-frame{width:58px;height:58px;flex:0 0 58px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:14px;background:#fff;border:1px solid #444;box-shadow:0 7px 18px rgba(0,0,0,.38);box-sizing:border-box;padding:2px}.channel-logo{width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;object-position:center;display:block;border-radius:10px;box-shadow:none;transform:none}@media(max-width:600px){.channel-logo-frame{width:50px;height:50px;flex-basis:50px;border-radius:12px;padding:2px}.channel-logo{width:100%;height:100%;border-radius:8px}}`;
+
+const PUBLIC_TEST_CSS = `
+.nm-recommendations{padding:16px;background:linear-gradient(145deg,#2b1111,#171717);border-color:#d33}.nm-recommendations .recommended-title{font-size:22px;letter-spacing:.2px;padding-bottom:10px;border-bottom:1px solid rgba(255,100,100,.28)}.recommended-list{display:grid;gap:12px}.nm-recommendations .card{margin:0;background:linear-gradient(135deg,#281818,#1c1c1c);border:1px solid #493030;box-shadow:0 7px 18px rgba(0,0,0,.18)}.nm-recommendations .card:nth-child(even){background:linear-gradient(135deg,#231717,#191919)}.thumb-logo,.related-thumb-logo,.hero-logo{object-fit:contain!important;object-position:center;background:#fff;padding:5px;box-sizing:border-box}.hero-logo{max-height:340px}.related-thumb-logo{padding:3px}@media(max-width:600px){.nm-recommendations{padding:11px}.recommended-list{gap:10px}.nm-recommendations .recommended-title{font-size:19px}.hero-logo{max-height:260px}}`;
+
+const ANALYTICS_CSS = `
+[hidden]{display:none!important}.visitor-stat{display:flex;align-items:center;gap:6px}.visitor-stat strong{font-size:16px}.card{position:relative;isolation:isolate;border:1px solid rgba(255,255,255,.09)}.card-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;opacity:.34;filter:saturate(.82)}.card-bg-shade{position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(12,12,12,.96) 0%,rgba(15,15,15,.91) 38%,rgba(15,15,15,.78) 100%)}.card-body,.thumb{position:relative}.summary-toggle{margin-top:7px;padding:5px 8px;border:1px solid #555;border-radius:8px;background:rgba(20,20,20,.82);color:#ddd;font-size:11px;cursor:pointer}.summary-toggle:hover{border-color:#ff4040;color:#fff}.summary-toggle:disabled{cursor:wait;opacity:.65}.summary-en{color:#dbe9ff}.summary-error{color:#ff9a9a}.click-count{color:#ffb3b3;font-size:11px;margin-top:5px}.top-news{background:#171717;border:1px solid #4b3420;border-radius:14px;padding:14px;margin:0 0 24px}.top-news-title{color:#ffb55f;font-size:21px;font-weight:800;margin-bottom:10px}.top-news-list{display:grid;gap:9px}.top-news .card{margin:0}.hero-fallback{object-fit:contain;background:#000}.related-thumb-fallback{object-fit:contain;background:#000}@media(max-width:600px){.visitor-stat{justify-content:space-between;margin-top:7px!important;padding-top:7px;border-top:1px solid #333}.top-news{padding:10px}.top-news-title{font-size:18px}.card-bg{opacity:.28}.card-bg-shade{background:linear-gradient(90deg,rgba(12,12,12,.97),rgba(15,15,15,.84))}}`;
+
+const LAYOUT_842_CSS = `
+.site-header{justify-content:center;align-items:center;text-align:center;min-height:82px}.site-header .brand{justify-content:center}.site-header .brand-copy{text-align:center}.site-header .brand-name{font-size:25px;line-height:1.05;letter-spacing:2.8px}.site-header h1{font-size:17px;line-height:1.1;color:#cfcfcf;letter-spacing:1.5px;margin:6px 0 5px}.site-header .view-switch{position:absolute;right:18px;top:50%;transform:translateY(-50%);margin:0}.article-grid,.recommended-list,.top-news-list,.related-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.article-grid .card,.recommended-list .card,.top-news-list .card{margin:0;height:100%;box-sizing:border-box}.related-grid .related-card{margin:0;height:100%;box-sizing:border-box}.source-title{margin-bottom:9px}.article-page-background{position:fixed;inset:0;z-index:0;overflow:hidden;background:#000}.article-page-background img{width:100%;height:100%;object-fit:cover;filter:saturate(.82)}.article-page-background span{position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,5,5,.70),rgba(10,10,10,.88) 42%,rgba(10,10,10,.96))}.article-content{position:relative;z-index:1}.article-content h1{text-shadow:0 3px 18px #000}.article-content .box,.article-content .article-lead{background:rgba(22,22,22,.90);backdrop-filter:blur(8px)}.article-translate:disabled{cursor:wait;opacity:.65}@media(max-width:600px){.site-header{display:flex;flex-direction:column;min-height:0}.site-header .brand{width:100%}.site-header .brand-name{font-size:18px;letter-spacing:1.8px}.site-header h1{font-size:14px;letter-spacing:1.2px}.site-header .view-switch{position:static;transform:none;margin:10px 0 0}.article-grid,.recommended-list,.top-news-list,.related-grid{grid-template-columns:1fr;gap:10px}.article-page-background span{background:linear-gradient(180deg,rgba(5,5,5,.76),rgba(10,10,10,.93) 38%,rgba(10,10,10,.98))}}`;
+
+const HEADER_FOOTER_843_CSS = `
+.site-header{min-height:190px;padding:24px;background-image:linear-gradient(180deg,rgba(0,0,0,.42),rgba(0,0,0,.82)),url("/article-background.jpg");background-size:cover;background-position:center 38%;background-repeat:no-repeat;border-color:#4a4a4a}.site-header .channel-logo-frame{display:none}.site-header .brand-copy{position:relative;z-index:2;text-shadow:0 3px 14px #000}.site-header .brand-name{font-size:30px;color:#fff}.site-header h1{font-size:18px;color:#e5e5e5}.site-header .version{color:#c0c0c0}.subtitle{text-align:center}.site-footer{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:38px;padding:24px 16px 12px;border-top:1px solid #333}.facebook-link{display:inline-flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-size:16px;font-weight:700}.facebook-link:hover{color:#8fbcff}.facebook-logo{width:30px;height:30px;display:block;flex:none}.admin-footer-link{color:#777;text-decoration:none;font-size:12px;border:1px solid #333;border-radius:8px;padding:6px 10px}.admin-footer-link:hover{color:#fff;border-color:#666}@media(max-width:600px){.site-header{min-height:145px;padding:18px 12px;background-position:center 36%}.site-header .brand-name{font-size:22px;letter-spacing:2px}.site-header h1{font-size:15px}.site-footer{margin-top:28px;padding-top:20px}.facebook-link{font-size:15px}.facebook-logo{width:28px;height:28px}}`;
+
+const NEWS_PORTAL_850_CSS = `
+:root{color-scheme:dark}html{scroll-behavior:smooth}body{max-width:1220px;background:radial-gradient(circle at 50% -10%,#301719 0,#121212 34%,#0b0b0c 72%);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.site-header{min-height:220px;border-radius:26px;box-shadow:0 22px 55px rgba(0,0,0,.38)}.site-header .brand-name{font-size:34px}.site-header h1{font-size:19px}.news-hero{margin:22px 0 24px;padding:38px 42px;border:1px solid #303033;border-radius:24px;background:linear-gradient(145deg,rgba(34,34,37,.96),rgba(18,18,20,.98));box-shadow:0 18px 45px rgba(0,0,0,.22);text-align:center}.hero-kicker{color:#ff4b5c;font-size:12px;font-weight:900;letter-spacing:2.4px}.news-hero h2{max-width:850px;margin:10px auto 8px;color:#fff;font-size:38px;line-height:1.08;letter-spacing:-1.25px}.news-hero p{max-width:720px;margin:0 auto;color:#aaa;font-size:16px;line-height:1.5}.hero-search{max-width:860px;margin:25px auto 0;padding:8px;border-color:#49494d;border-radius:18px;background:#0b0b0d;box-shadow:0 12px 32px rgba(0,0,0,.28)}.hero-search input{min-height:54px;padding:0 19px;border:0;background:transparent;font-size:18px}.hero-search input:focus{outline:0}.hero-search button{min-width:120px;border-radius:13px;background:linear-gradient(135deg,#ff334f,#d81431);font-size:15px}.topic-filters{margin:0 0 24px;padding:0 2px 10px}.topic-filter{background:#18181b;border-color:#343438;padding:8px 12px;font-size:13px}.nm-recommendations{padding:0;border:0;background:transparent}.nm-recommendations .recommended-title{display:flex;flex-direction:column;gap:4px;margin:0 0 15px;padding:0 0 12px;border-bottom:1px solid #343438;color:#fff}.nm-recommendations .recommended-title span{font-size:31px;line-height:1;font-weight:900;letter-spacing:-.7px}.nm-recommendations .recommended-title small{color:#ff5a68;font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase}.recommended-list{gap:16px}.card-featured{display:flex;flex-direction:column;padding:0;border:1px solid #323237;border-radius:20px;background:#171719!important;box-shadow:0 14px 35px rgba(0,0,0,.25)}.card-featured .card-bg,.card-featured .card-bg-shade{display:none}.card-featured .thumb{width:100%;height:225px;border-radius:0;object-fit:cover}.card-featured .card-body{padding:19px 20px 20px}.card-featured .card-title{font-size:21px;line-height:1.18}.card-featured .lead{margin-top:9px;font-size:14px;line-height:1.45}.card-featured:first-child{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,1fr);min-height:365px}.card-featured:first-child .thumb{height:100%;min-height:365px}.card-featured:first-child .card-body{display:flex;flex-direction:column;justify-content:center;padding:30px}.card-featured:first-child .card-title{font-size:30px}.card-featured:first-child .lead{font-size:16px}.public-score{display:inline-flex;align-items:center;align-self:flex-start;width:max-content;margin-top:9px;padding:5px 9px;border:1px solid rgba(255,79,96,.48);border-radius:999px;background:rgba(255,54,76,.12);color:#ff8994;font-size:11px;font-weight:700}.public-score strong{margin-left:4px;color:#fff}.portal-stats{justify-content:center;margin:20px 0 28px;padding:13px 16px;border-radius:16px;background:rgba(23,23,25,.78);backdrop-filter:blur(10px)}.top-news{border-color:#343438;background:linear-gradient(145deg,#19191b,#111113)}.top-news-title{color:#ff5968}.category-title{margin-top:6px;color:#fff;font-size:25px;font-weight:900;letter-spacing:-.4px}.source-title{color:#ff7a85;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase}.article-grid{gap:13px}.article-grid .card{border-radius:16px;transition:transform .18s ease,border-color .18s ease}.article-grid .card:hover{transform:translateY(-2px);border-color:#555}.article-view-counter{margin:22px 0 0;padding:14px 16px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(18,18,20,.86);color:#bbb;text-align:center;font-size:14px;backdrop-filter:blur(8px)}.article-view-counter strong{color:#fff;font-size:17px}.site-footer{margin-top:46px}@media(max-width:760px){body{padding:10px}.site-header{min-height:170px;border-radius:20px}.site-header .brand-name{font-size:25px}.news-hero{margin:14px 0 18px;padding:25px 17px;border-radius:20px}.news-hero h2{font-size:28px;letter-spacing:-.7px}.news-hero p{font-size:14px}.hero-search{display:flex;margin-top:20px;padding:6px;border-radius:15px}.hero-search input{min-height:48px;padding:0 12px;font-size:16px}.hero-search button{min-width:86px;padding:9px;font-size:13px}.nm-recommendations .recommended-title span{font-size:26px}.recommended-list{grid-template-columns:1fr}.card-featured:first-child{grid-column:auto;display:flex;min-height:0}.card-featured:first-child .thumb{height:230px;min-height:0}.card-featured:first-child .card-body{display:block;padding:19px 20px 20px}.card-featured:first-child .card-title{font-size:23px}.card-featured:first-child .lead{font-size:14px}.card-featured .thumb{height:205px}.portal-stats{display:grid;gap:5px;text-align:center}.article-grid{grid-template-columns:1fr}.category-title{font-size:23px}}@media(max-width:390px){.news-hero h2{font-size:25px}.hero-search button{min-width:76px}.card-featured:first-child .thumb{height:205px}}`;
+
+const DAILY_THEME_851_CSS = `
+.site-header{min-height:205px}.header-tagline{max-width:600px;margin:9px auto 0;color:#e2e2e2;font-size:13px;font-weight:600;line-height:1.35;text-shadow:0 2px 10px #000}.theme-toggle{position:absolute;z-index:4;right:16px;top:16px;display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid rgba(255,255,255,.32);border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:11px;font-weight:700;cursor:pointer;backdrop-filter:blur(10px)}.theme-toggle:hover{border-color:#fff}.daily-info-bar{display:flex;align-items:center;justify-content:center;gap:8px;margin:12px 0;padding:8px;border:1px solid #303035;border-radius:14px;background:rgba(20,20,22,.92);color:#ccc;font-size:12px;overflow-x:auto;scrollbar-width:thin}.daily-info-bar>div{display:flex;align-items:center;gap:6px;flex:none;padding:5px 11px;border-right:1px solid #333}.daily-info-bar>div:last-child{border-right:0}.daily-info-bar strong{color:#fff}.daily-icon{font-size:14px}.news-hero{margin:12px 0 20px;padding:20px 24px}.news-hero h2{margin:7px auto 4px;font-size:24px;letter-spacing:-.55px}.news-hero p{font-size:13px}.hero-search{max-width:760px;margin-top:14px;padding:5px;border-radius:14px}.hero-search input{min-height:40px;padding:0 13px;font-size:15px}.hero-search button{min-width:98px;padding:8px 12px;border-radius:10px;font-size:13px}.thumb-logo,.related-thumb-fallback,.hero-fallback{object-fit:cover!important;object-position:center!important;padding:0!important;background:#000!important}.card-featured .thumb{object-fit:cover;object-position:center}.site-header{background-size:cover;background-position:center}.article-page-background img{object-fit:cover;object-position:center}html[data-theme="dark"] body{background:radial-gradient(circle at 50% -10%,#301719 0,#121212 34%,#000 76%)}html[data-theme="light"]{color-scheme:light}html[data-theme="light"] body{background:#f2f3f6;color:#18181a}html[data-theme="light"] .news-hero,html[data-theme="light"] .portal-stats,html[data-theme="light"] .daily-info-bar{border-color:#d9d9df;background:#fff;color:#57575d;box-shadow:0 12px 32px rgba(28,28,35,.08)}html[data-theme="light"] .news-hero h2,html[data-theme="light"] .daily-info-bar strong,html[data-theme="light"] .nm-recommendations .recommended-title span,html[data-theme="light"] .category-title{color:#17171a}html[data-theme="light"] .hero-search{border-color:#d5d5dc;background:#f5f5f7;box-shadow:none}html[data-theme="light"] .hero-search input{color:#17171a}html[data-theme="light"] .topic-filter{border-color:#d8d8de;background:#fff;color:#39393e}html[data-theme="light"] .card,html[data-theme="light"] .card-featured{border-color:#dedee4;background:#fff!important;box-shadow:0 10px 26px rgba(28,28,35,.08)}html[data-theme="light"] .card-bg{opacity:.11}html[data-theme="light"] .card-bg-shade{background:rgba(255,255,255,.88)}html[data-theme="light"] .card-title{color:#18181a}html[data-theme="light"] .lead{color:#55555b}html[data-theme="light"] .meta{color:#74747b}html[data-theme="light"] .top-news{border-color:#dcdce2;background:#fff}html[data-theme="light"] .top-news-title{color:#d91e3c}html[data-theme="light"] .stats strong{color:#d91e3c}html[data-theme="light"] .site-footer{border-color:#d4d4da}html[data-theme="light"] .facebook-link{color:#18181a}html[data-theme="light"] .admin-footer-link{border-color:#cfcfd5;color:#666}@media(max-width:760px){.site-header{min-height:155px}.header-tagline{max-width:260px;margin-top:7px;font-size:11px}.theme-toggle{right:9px;top:9px;padding:7px 8px}.theme-toggle span{display:none}.daily-info-bar{justify-content:flex-start;margin:9px 0;padding:6px;font-size:11px}.daily-info-bar>div{padding:4px 9px}.news-hero{margin:9px 0 15px;padding:15px 13px}.news-hero h2{font-size:20px}.news-hero p{font-size:12px}.hero-search{margin-top:11px}.hero-search input{min-height:36px;font-size:14px}.hero-search button{min-width:78px;padding:7px;font-size:12px}}`;
+
+const HEADER_LOGO_852_CSS = `
+.site-header{min-height:160px;background-image:none!important;background:linear-gradient(135deg,#242428 0%,#161619 58%,#31191d 100%)!important}.header-layout{display:flex;align-items:center;justify-content:center;gap:34px;width:100%;padding:14px 70px 14px 18px;box-sizing:border-box}.header-layout .brand{flex:0 1 390px}.header-daily-info{flex:0 1 auto;display:grid;grid-template-columns:repeat(3,max-content);gap:0;margin:0;padding:7px 9px;border-color:rgba(255,255,255,.16);background:rgba(5,5,7,.42);box-shadow:0 10px 28px rgba(0,0,0,.18);backdrop-filter:blur(12px)}.header-daily-info>div{padding:7px 12px}.thumb-logo,.card-bg-fallback,.related-thumb-fallback{object-fit:cover!important;object-position:center 32%!important;padding:0!important;background:#000!important}.nm-background img{object-fit:cover!important;object-position:center 32%!important}@media(max-width:900px){.header-layout{flex-direction:column;gap:12px;padding:22px 55px 16px}.header-layout .brand{flex:auto}.header-daily-info{max-width:100%;grid-template-columns:repeat(3,max-content)}}@media(max-width:600px){.site-header{min-height:0}.header-layout{padding:20px 8px 13px}.header-daily-info{display:flex;justify-content:flex-start;width:100%;box-sizing:border-box;overflow-x:auto}.header-daily-info>div{padding:5px 9px}}`;
+
+const THEME_SWITCH_853_CSS = `
+.theme-control{position:absolute;z-index:5;right:15px;top:15px;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid rgba(255,255,255,.24);border-radius:999px;background:rgba(0,0,0,.56);box-shadow:0 8px 22px rgba(0,0,0,.22);backdrop-filter:blur(10px)}.theme-symbol{font-size:14px;line-height:1;transition:opacity .2s ease,transform .2s ease}.theme-slider{position:relative;width:48px;height:26px;padding:0;border:1px solid rgba(255,255,255,.28);border-radius:999px;background:linear-gradient(90deg,#f6c84c,#263454);cursor:pointer;box-shadow:inset 0 1px 4px rgba(0,0,0,.35)}.theme-slider:focus-visible{outline:2px solid #fff;outline-offset:3px}.theme-thumb{position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.45);transition:transform .22s ease}.theme-slider[aria-checked="true"] .theme-thumb{transform:translateX(21px)}.theme-control[data-mode="dark"] .theme-symbol:first-child,.theme-control[data-mode="light"] .theme-symbol:last-child{opacity:.45;transform:scale(.86)}.theme-control[data-mode="dark"] .theme-symbol:last-child,.theme-control[data-mode="light"] .theme-symbol:first-child{opacity:1;transform:scale(1.08)}html[data-theme="light"] .theme-control{border-color:rgba(0,0,0,.18);background:rgba(255,255,255,.82)}@media(max-width:600px){.theme-control{right:8px;top:8px;gap:4px;padding:5px 6px}.theme-symbol{font-size:12px}.theme-slider{width:42px;height:23px}.theme-thumb{width:15px;height:15px}.theme-slider[aria-checked="true"] .theme-thumb{transform:translateX(19px)}}`;
+
+const PERFORMANCE_860_CSS = `
+.header-daily-info{grid-template-columns:max-content minmax(220px,1fr);align-items:center}.header-daily-info>.daily-date{height:100%;border-right:1px solid #333}.header-daily-info>.daily-details{display:flex;flex-direction:column;align-items:flex-start;gap:5px;border-right:0}.daily-details>div{display:flex;align-items:center;gap:6px}.daily-weather{padding-top:5px;border-top:1px solid rgba(255,255,255,.12);color:#aaa}html[data-theme="light"] .site-header{background:#fff!important;border-color:#d8d8de;box-shadow:0 18px 42px rgba(30,30,38,.10)}html[data-theme="light"] .site-header .brand-name{color:#17171a;text-shadow:none}html[data-theme="light"] .site-header h1{color:#3f3f45;text-shadow:none}html[data-theme="light"] .site-header .version{color:#777}html[data-theme="light"] .header-tagline{color:#4f4f56;text-shadow:none}html[data-theme="light"] .header-daily-info{border-color:#d9d9df;background:#f5f5f7;color:#444;box-shadow:none}html[data-theme="light"] .header-daily-info strong{color:#17171a}html[data-theme="light"] .header-daily-info>.daily-date{border-color:#d8d8de}html[data-theme="light"] .daily-weather{border-color:#d8d8de;color:#606068}@media(max-width:600px){.header-daily-info{display:grid;grid-template-columns:max-content minmax(190px,1fr);overflow:visible}.header-daily-info>.daily-details{padding-left:9px}.daily-weather{white-space:normal;line-height:1.3}}`;
+
+const ARTICLE_THEME_870_CSS = `
+.article-theme-control{position:fixed;right:12px;top:12px;z-index:20}.article-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.article-actions .btn{margin:0;padding:10px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:linear-gradient(135deg,#34343a,#202024);box-shadow:0 7px 18px rgba(0,0,0,.18);font-size:13px;transition:transform .16s ease,border-color .16s ease}.article-actions .btn:hover{transform:translateY(-1px);border-color:#ff6271}.article-actions>a.btn:first-of-type{background:linear-gradient(135deg,#ff3b51,#c91330);border-color:#ff5c6d}.article-translate{min-width:155px}html[data-theme="light"] body{background:#f3f4f7;color:#18181a}html[data-theme="light"] .article-page-background span{background:linear-gradient(180deg,rgba(250,250,252,.82),rgba(245,245,248,.94))}html[data-theme="light"] .article-content h1{color:#17171a;text-shadow:none}html[data-theme="light"] .back{color:#444}html[data-theme="light"] .article-content .meta{color:#666}html[data-theme="light"] .article-content .box,html[data-theme="light"] .article-content .article-lead,html[data-theme="light"] .article-view-counter{border:1px solid #dddde3;background:rgba(255,255,255,.92);color:#35353a;box-shadow:0 12px 30px rgba(28,28,35,.08)}html[data-theme="light"] .article-view-counter strong{color:#17171a}html[data-theme="light"] .related-card{border-color:#dedee4;background:#f7f7f9}html[data-theme="light"] .related-card a{color:#17171a}html[data-theme="light"] .tag{border-color:#d7d7dd;background:#fff;color:#333}html[data-theme="light"] .article-actions .btn{border-color:#d4d4da;background:#fff;color:#25252a;box-shadow:0 6px 16px rgba(28,28,35,.08)}html[data-theme="light"] .article-actions>a.btn:first-of-type{background:linear-gradient(135deg,#ff3b51,#d01431);color:#fff}@media(max-width:600px){.article-theme-control{right:7px;top:7px}.article-actions{gap:7px}.article-actions .btn{padding:9px 11px;font-size:12px}.article-translate{min-width:143px}}`;
+
+const LIVE_NEWS_870_CSS = `
+.theme-control{right:7px;top:7px;gap:3px;padding:3px 5px}.theme-symbol{font-size:10px}.theme-slider{width:34px;height:18px}.theme-thumb{left:2px;top:2px;width:12px;height:12px}.theme-slider[aria-checked="true"] .theme-thumb{transform:translateX(16px)}.header-layout{padding-right:54px}.header-logo-frame{width:68px;height:68px;flex:0 0 68px;overflow:hidden;border:1px solid rgba(255,255,255,.24);border-radius:18px;background:#000;box-shadow:0 9px 24px rgba(0,0,0,.28)}.header-logo-frame img{width:100%;height:100%;object-fit:cover;object-position:center 32%;transform:scale(1.06)}.live-match{display:flex!important;flex-direction:column;align-items:flex-start!important;gap:2px!important;padding-top:6px;border-top:1px solid rgba(255,255,255,.12);color:#eee}.live-match strong{font-size:11px}.live-match small{color:#999;font-size:9px;line-height:1.25}.quick-news{margin:0 0 24px;padding:15px;border:1px solid #343438;border-radius:18px;background:linear-gradient(145deg,#19191b,#111113)}.quick-news-heading{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}.quick-news-heading span{color:#ff5968;font-size:20px;font-weight:900}.quick-news-heading small{color:#888;font-size:11px}.quick-news-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}.quick-news-item{display:grid;grid-template-columns:8px minmax(0,1fr);gap:9px;padding:10px 4px;border-bottom:1px solid #29292d;color:#fff;text-decoration:none}.quick-news-item:hover strong{color:#ff7180}.quick-news-dot{width:7px;height:7px;margin-top:6px;border-radius:50%;background:#ff3f56;box-shadow:0 0 0 4px rgba(255,63,86,.10)}.quick-news-copy{display:flex;flex-direction:column;gap:4px;min-width:0}.quick-news-copy strong{font-size:14px;line-height:1.25}.quick-news-copy small{color:#888;font-size:10px}.lead{display:-webkit-box!important;-webkit-box-orient:vertical;-webkit-line-clamp:3!important;overflow:hidden}.portal-stats{margin:13px 0 20px}html[data-theme="light"] .quick-news{border-color:#dcdce2;background:#fff;box-shadow:0 10px 26px rgba(28,28,35,.06)}html[data-theme="light"] .quick-news-item{border-color:#e5e5e9;color:#19191c}html[data-theme="light"] .live-match{border-color:#d8d8de;color:#29292e}html[data-theme="light"] .live-match small{color:#777}@media(max-width:760px){.header-logo-frame{width:54px;height:54px;flex-basis:54px;border-radius:14px}.header-layout{padding-right:42px}.quick-news-grid{grid-template-columns:1fr}.quick-news-heading{align-items:flex-start;flex-direction:column;gap:2px}.quick-news{padding:12px}.quick-news-copy strong{font-size:13px}.lead{-webkit-line-clamp:3!important}}`;
+
+const HEADER_REFINEMENT_871_CSS = `
+.site-header{overflow:visible}.header-layout{gap:20px}.header-search{position:relative;z-index:6;flex:none}.header-search summary{display:grid;place-items:center;width:48px;height:48px;border:1px solid rgba(255,255,255,.28);border-radius:50%;background:rgba(5,5,7,.54);color:#fff;cursor:pointer;list-style:none;box-shadow:0 8px 22px rgba(0,0,0,.22);backdrop-filter:blur(10px)}.header-search summary::-webkit-details-marker{display:none}.header-search summary span{font-size:22px;line-height:1}.header-search[open] summary{border-color:#ff5f70;background:rgba(86,19,29,.9)}.header-search-form{position:absolute;right:0;top:58px;z-index:10;width:min(560px,78vw);margin:0;padding:7px;border-color:#49494d;border-radius:14px;background:#111114;box-shadow:0 18px 42px rgba(0,0,0,.42)}.header-search-form input{min-height:42px;border:0;background:transparent}.header-search-form button{min-width:92px}.standalone-daily-info{min-height:0;justify-content:center;gap:0;margin:8px 0 20px;padding:5px 8px;border-radius:12px;overflow-x:auto}.standalone-daily-info>div{min-height:24px;padding:3px 12px}.standalone-daily-info .daily-weather{padding-top:3px;border-top:0}.standalone-daily-info .live-match{padding-top:3px;border-top:0;white-space:normal}.portal-stats{margin:34px 0 0}html[data-theme="light"] .header-search summary{border-color:#d2d2d8;background:#f4f4f7;color:#18181b;box-shadow:none}html[data-theme="light"] .header-search[open] summary{border-color:#d91e3c;background:#ffe8ec}html[data-theme="light"] .header-search-form{border-color:#d8d8de;background:#fff;box-shadow:0 16px 36px rgba(30,30,38,.14)}html[data-theme="light"] .header-search-form input{color:#17171a}@media(max-width:760px){.header-layout{flex-direction:row;gap:10px;padding:18px 42px 16px 10px}.header-layout .brand{flex:1;min-width:0}.header-search summary{width:40px;height:40px}.header-search summary span{font-size:19px}.header-search-form{position:fixed;left:10px;right:10px;top:118px;width:auto}.standalone-daily-info{justify-content:flex-start;margin:7px 0 15px;font-size:10px}.standalone-daily-info>div{padding:3px 9px}.portal-stats{margin-top:26px}}`;
+
+const SITE_MENU_880_CSS = `
+html,body{width:100%;max-width:100%;overflow-x:hidden}*,*::before,*::after{box-sizing:border-box}img,svg{max-width:100%}.site-menu{position:relative;z-index:12;flex:none}.site-menu>summary{display:grid;place-items:center;width:48px;height:48px;border:1px solid rgba(255,255,255,.28);border-radius:50%;background:rgba(5,5,7,.54);color:#fff;cursor:pointer;list-style:none;box-shadow:0 8px 22px rgba(0,0,0,.22);backdrop-filter:blur(10px)}.site-menu>summary::-webkit-details-marker{display:none}.site-menu>summary span{font-size:23px;line-height:1}.site-menu[open]>summary{border-color:#ff5f70;background:rgba(86,19,29,.92)}.site-menu-panel{position:absolute;right:0;top:58px;width:270px;max-width:calc(100vw - 20px);padding:10px;border:1px solid #424248;border-radius:16px;background:rgba(17,17,20,.98);box-shadow:0 20px 48px rgba(0,0,0,.48);backdrop-filter:blur(14px)}.site-menu-panel>a,.push-enable{display:block;width:100%;padding:10px 11px;border:0;border-bottom:1px solid #2d2d32;background:transparent;color:#eee;text-align:left;text-decoration:none;font:600 13px/1.25 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;cursor:pointer}.site-menu-panel>a:hover,.push-enable:hover{border-radius:8px;background:#29292e;color:#ff7b88}.menu-theme-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px;color:#bbb;font-size:12px;font-weight:700}.menu-theme-control{position:static!important;display:flex!important;transform:none!important;margin:0!important}.push-enable{margin-top:2px;border-bottom:0;color:#ff9aa4}.push-enable:disabled{cursor:wait;opacity:.7}.article-site-menu{position:fixed;right:12px;top:12px;z-index:30}.article-body{white-space:normal}.article-body-text{white-space:pre-line;font-size:17px;line-height:1.72}.ai-article-label{margin:0 0 15px;padding:0 0 10px;border-bottom:1px solid rgba(255,255,255,.12);color:#ff7f8b;font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}html[data-theme="light"] .site-menu>summary{border-color:#d2d2d8;background:#f4f4f7;color:#18181b;box-shadow:none}html[data-theme="light"] .site-menu[open]>summary{border-color:#d91e3c;background:#ffe8ec}html[data-theme="light"] .site-menu-panel{border-color:#d8d8de;background:rgba(255,255,255,.98);box-shadow:0 18px 42px rgba(30,30,38,.16)}html[data-theme="light"] .site-menu-panel>a,html[data-theme="light"] .push-enable{border-color:#e5e5e9;color:#27272c}html[data-theme="light"] .site-menu-panel>a:hover,html[data-theme="light"] .push-enable:hover{background:#f2f2f5;color:#d91e3c}html[data-theme="light"] .menu-theme-row{color:#555}html[data-theme="light"] .ai-article-label{border-color:#dddde3;color:#d91e3c}@media(max-width:760px){body{min-width:0}.header-layout{width:100%;max-width:100%;padding-right:10px}.header-layout .brand-copy{min-width:0}.header-layout .brand-name,.header-layout h1,.header-tagline{overflow-wrap:anywhere}.site-menu>summary{width:40px;height:40px}.site-menu>summary span{font-size:20px}.site-menu-panel{position:fixed;right:10px;top:68px;width:min(290px,calc(100vw - 20px))}.article-site-menu{right:7px;top:7px}.article-site-menu .site-menu-panel{top:57px}.article-body-text{font-size:16px;line-height:1.65}.daily-info-bar{max-width:100%}.card,.card-body,.article-grid,.recommended-list,.top-news-list,.related-grid{min-width:0;max-width:100%}}`;
+
+const PAGE_WIDTH_880_CSS = `.main-page{max-width:1220px}.article-page{max-width:900px}.standalone-daily-info{flex-wrap:wrap}.standalone-daily-info>.daily-details{display:flex;flex-direction:column;align-items:flex-start;gap:4px}.standalone-daily-info>.daily-details>div{display:flex;align-items:center;gap:6px}.standalone-daily-info>.daily-details .daily-weather{width:100%;padding-top:4px;border-top:1px solid rgba(255,255,255,.12)}.standalone-daily-info>.live-match{flex:1 0 100%;width:100%;align-items:center!important;margin-top:3px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12);text-align:center}.card-meta-row{display:flex;align-items:flex-end;justify-content:space-between;gap:9px;flex-wrap:wrap}.card-meta-row .meta{flex:1;min-width:150px}.card-meta-row .summary-toggle{flex:none;margin-top:4px}.menu-back{display:none}.site-menu[open]>summary{grid-auto-flow:column;gap:6px;width:76px}.site-menu[open]>summary .menu-back{display:inline}.push-option-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px;color:#eee;font-size:13px;font-weight:700}.push-switch{position:relative;width:42px;height:23px;flex:none;padding:0;border:1px solid #555;border-radius:999px;background:#29292e;cursor:pointer}.push-switch span{position:absolute;left:3px;top:3px;width:15px;height:15px;border-radius:50%;background:#aaa;transition:transform .2s ease,background .2s ease}.push-switch[aria-checked="true"]{border-color:#39b86b;background:#174b2c}.push-switch[aria-checked="true"] span{transform:translateX(18px);background:#71ef9f}.push-switch:disabled{cursor:wait;opacity:.6}html[data-theme="light"] .standalone-daily-info>.daily-details .daily-weather,html[data-theme="light"] .standalone-daily-info>.live-match{border-color:#d8d8de}html[data-theme="light"] .push-option-row{color:#27272c}html[data-theme="light"] .push-switch{border-color:#ccc;background:#e5e5e9}@media(max-width:760px){.site-menu[open]>summary{width:66px}.card-meta-row{align-items:center}.card-meta-row .summary-toggle{font-size:10px;padding:4px 7px}}`;
+
+const NM_ARTICLES_890_CSS = `.nm-own-articles{margin:0 0 26px}.nm-own-heading{display:flex;flex-direction:column;gap:3px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #343438}.nm-own-heading span{color:#fff;font-size:25px;font-weight:900}.nm-own-heading small{color:#ff6c79;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase}.nm-own-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.nm-own-card{display:grid;grid-template-columns:130px minmax(0,1fr);gap:13px;padding:10px;border:1px solid #343438;border-radius:16px;background:#171719}.nm-own-card img{width:130px;height:100px;object-fit:cover;border-radius:10px}.nm-own-card a{color:#fff;text-decoration:none;font-size:17px;font-weight:800;line-height:1.25}.nm-own-card p{margin:7px 0;color:#aaa;font-size:12px;line-height:1.4}.nm-own-card small{color:#777}.nm-own-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:9px}.nm-own-actions .action-btn,.article-editor-actions .btn{font-size:11px!important;padding:6px 9px!important}.article-editor-actions{margin:12px 0 4px}.nm-own-label{display:inline-block;margin:16px 0 0;padding:6px 10px;border:1px solid #ff5e70;border-radius:999px;color:#ff8994;font-size:12px;font-weight:800}.nm-own-body{white-space:pre-line;font-size:17px;line-height:1.72}html[data-theme="light"] .nm-own-heading span,html[data-theme="light"] .nm-own-card a{color:#18181a}html[data-theme="light"] .nm-own-card{border-color:#dedee4;background:#fff}@media(max-width:700px){.nm-own-grid{grid-template-columns:1fr}.nm-own-card{grid-template-columns:92px minmax(0,1fr)}.nm-own-card img{width:92px;height:78px}.nm-own-heading span{font-size:21px}}`;
+
+const MENU_SECURITY_810_CSS = `.site-menu>summary{position:relative;z-index:2}.site-menu[open]>summary{display:flex!important;align-items:center;justify-content:center;gap:5px;width:76px}.site-menu[open]>summary .menu-lines,.site-menu[open]>summary .menu-back{display:inline!important}.menu-close{display:flex;width:100%;align-items:center;gap:8px;margin:0 0 4px;padding:10px 11px;border:0;border-bottom:1px solid #3a3a40;background:transparent;color:#ff9aa5;text-align:left;font:800 13px/1.25 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;cursor:pointer}.menu-close:hover{border-radius:8px;background:#29292e;color:#fff}html[data-theme="light"] .menu-close{border-color:#e1e1e6;color:#d91e3c}html[data-theme="light"] .menu-close:hover{background:#f2f2f5;color:#9f1028}@media(max-width:760px){.site-menu[open]>summary{width:66px}.menu-close{padding:11px}}`;
+
+const UI_811_CSS = `.daily-theme-box{margin-left:auto!important;border-right:0!important;display:flex!important;align-items:center!important;gap:5px!important;padding:4px 9px!important;border-left:1px solid rgba(255,255,255,.12)}.daily-theme-box .theme-slider{width:34px;height:18px}.daily-theme-box .theme-thumb{width:12px;height:12px}.daily-theme-box .theme-slider[aria-checked="true"] .theme-thumb{transform:translateX(16px)}.danger-action{border-color:#7f2c36!important;color:#ff9aa5!important;background:#31171c!important;cursor:pointer}.danger-action:hover{background:#5a2029!important;color:#fff!important}.nm-delete-action{margin-top:8px}.article-grid .card[style*="display: none"]{display:none!important}html[data-theme="light"] .daily-theme-box{border-color:#d8d8de}html[data-theme="light"] .danger-action{border-color:#f0b7bf!important;background:#fff1f3!important;color:#c0132d!important}@media(max-width:760px){.daily-theme-box{margin-left:0!important}.standalone-daily-info{align-items:stretch}.standalone-daily-info>.daily-theme-box{flex:0 0 auto}}`;
+
+const UI_812_CSS = `.site-header{min-height:86px!important;padding:0!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:18px!important;background:#101012!important;background-image:none!important;box-shadow:0 12px 34px rgba(0,0,0,.18)!important;overflow:visible!important}.header-layout{display:grid!important;grid-template-columns:54px minmax(0,1fr) 54px!important;align-items:center!important;width:100%!important;min-height:86px!important;padding:0 18px!important;gap:12px!important}.header-logo-frame,.site-header h1,.header-tagline,.site-header .version{display:none!important}.header-layout>.site-menu{grid-column:1;grid-row:1;justify-self:start}.header-layout>.brand{grid-column:2;grid-row:1;justify-self:center;min-width:0;text-align:center}.header-layout>.header-search{grid-column:3;grid-row:1;justify-self:end}.site-header .brand-copy{text-shadow:none!important}.site-header .brand-name{color:#f5f5f5!important;font-size:clamp(20px,2.6vw,32px)!important;line-height:1!important;letter-spacing:-.45px!important;font-weight:880!important;text-transform:none!important;white-space:nowrap}.site-menu>summary,.header-search summary{width:52px!important;height:52px!important;border-radius:999px!important;border:1.5px solid rgba(255,255,255,.22)!important;background:rgba(255,255,255,.025)!important;box-shadow:none!important;color:#fff!important;backdrop-filter:none!important}.site-menu>summary .menu-lines{font-size:23px!important}.header-search summary span{font-size:23px!important}.site-menu[open]>summary{width:66px!important;border-color:rgba(255,255,255,.42)!important;background:rgba(255,255,255,.075)!important}.site-menu-panel{left:0!important;right:auto!important;top:62px!important}.header-search-form{right:0!important;top:62px!important}.standalone-daily-info{display:grid!important;grid-template-columns:minmax(92px,.55fr) minmax(190px,1.4fr) minmax(92px,.55fr)!important;align-items:stretch!important;gap:0!important;overflow:visible!important}.standalone-daily-info>.daily-date{grid-column:1;justify-content:center!important}.standalone-daily-info>.daily-details{grid-column:2;justify-content:center!important;align-items:center!important;text-align:center!important}.standalone-daily-info>.daily-details .daily-weather{border-top:1px solid rgba(255,255,255,.12)!important;text-align:center}.standalone-daily-info>.daily-theme-box{grid-column:3;grid-row:1;margin-left:0!important;justify-content:center!important;border-left:1px solid rgba(255,255,255,.12)!important}.standalone-daily-info>.live-match{grid-column:1 / -1!important}.footer-version{color:#777;font-size:12px;text-align:center}.site-footer{background:rgba(18,18,20,.58);border:1px solid rgba(255,255,255,.08);border-radius:18px;margin-bottom:18px}html[data-theme="light"] .site-header{border-color:#d8d8de!important;background:#fff!important;box-shadow:0 10px 28px rgba(28,28,35,.08)!important}html[data-theme="light"] .site-header .brand-name{color:#151518!important}html[data-theme="light"] .site-menu>summary,html[data-theme="light"] .header-search summary{border-color:#d0d0d7!important;background:#f5f5f7!important;color:#151518!important}html[data-theme="light"] .site-menu[open]>summary{border-color:#d91e3c!important;background:#ffe8ec!important}html[data-theme="light"] .footer-version{color:#777}@media(max-width:760px){.site-header{min-height:64px!important;border-radius:14px!important}.header-layout{grid-template-columns:40px minmax(0,1fr) 40px!important;min-height:64px!important;padding:0 10px!important;gap:7px!important}.site-header .brand-name{font-size:clamp(16px,4.8vw,22px)!important;letter-spacing:-.2px!important}.site-menu>summary,.header-search summary{width:38px!important;height:38px!important;border-width:1.2px!important}.site-menu>summary .menu-lines{font-size:19px!important}.header-search summary span{font-size:18px!important}.site-menu[open]>summary{width:58px!important}.site-menu-panel{top:48px!important}.header-search-form{position:fixed!important;top:76px!important;left:10px!important;right:10px!important;width:auto!important}.standalone-daily-info{grid-template-columns:minmax(74px,.7fr) minmax(145px,1.3fr) minmax(74px,.7fr)!important;font-size:10px!important}.standalone-daily-info>div{padding:5px 7px!important}.daily-theme-box .theme-symbol{font-size:10px}.daily-theme-box .theme-slider{width:32px!important}}`;
+
+const UI_814_CSS = `.site-header .brand-name{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;font-size:clamp(17px,2.05vw,25px)!important;letter-spacing:-.2px!important;font-weight:850!important}.header-inline-logo{display:block!important;width:28px!important;height:28px!important;border-radius:8px!important;object-fit:cover!important;object-position:center!important;flex:none!important}.recommended-title-minimal{margin-bottom:12px!important;padding-bottom:9px!important;border-bottom:1px solid rgba(255,100,100,.26)!important}.recommended-title-minimal small{display:block!important;color:#ff5a68!important;font-size:12px!important;font-weight:900!important;letter-spacing:1.35px!important;text-transform:uppercase!important}.recommended-title-minimal span{display:none!important}@media(max-width:760px){.site-header .brand-name{gap:6px!important;font-size:clamp(14px,4vw,18px)!important}.header-inline-logo{width:22px!important;height:22px!important;border-radius:7px!important}.recommended-title-minimal small{font-size:10px!important;letter-spacing:1px!important}}`;
+
+const UI_815_CSS = `html[data-theme="light"] body{background:#fff!important}.main-page .card{display:grid!important;grid-template-columns:112px minmax(0,1fr)!important;align-items:start!important;min-height:0!important;padding:11px!important;background:#1c1c1c!important}.main-page .card-bg{display:block!important;opacity:.24!important;filter:saturate(.78)!important}.main-page .card-bg-shade{display:block!important;background:linear-gradient(90deg,rgba(12,12,12,.96) 0%,rgba(15,15,15,.91) 38%,rgba(15,15,15,.78) 100%)!important}.main-page .thumb{display:block!important;width:112px!important;height:84px!important;object-fit:cover!important;border-radius:8px!important;background:#222!important}.main-page .thumb-logo{object-fit:cover!important;object-position:center 32%!important;background:#000!important}.main-page .card-body{width:auto!important;min-width:0!important;padding:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important}.main-page .card-title{color:#fff!important;text-shadow:none!important}.main-page .lead{color:#bbb!important;-webkit-line-clamp:2!important;line-height:1.35!important}.main-page .meta{color:#999!important}.main-page .summary-toggle{background:rgba(20,20,20,.82)!important;color:#ddd!important}.card-featured{display:grid!important;grid-template-columns:160px minmax(0,1fr)!important;min-height:0!important}.card-featured:first-child{display:grid!important;grid-template-columns:220px minmax(0,1fr)!important;min-height:0!important}.card-featured .thumb{display:block!important;width:160px!important;height:122px!important;border-radius:14px!important}.card-featured:first-child .thumb{width:220px!important;height:160px!important;min-height:0!important}.card-featured:first-child .card-body{display:block!important;margin-top:0!important;padding:0!important}.card-featured:first-child .card-title{font-size:24px!important}.card-featured:first-child .lead{font-size:14px!important}html[data-theme="light"] .main-page .card{background:#fff!important;border-color:#dedee4!important;box-shadow:0 10px 26px rgba(28,28,35,.08)!important}html[data-theme="light"] .main-page .card-bg{opacity:.08!important}html[data-theme="light"] .main-page .card-bg-shade{background:rgba(255,255,255,.90)!important}html[data-theme="light"] .main-page .card-title{color:#17171a!important}html[data-theme="light"] .main-page .lead{color:#55555b!important}html[data-theme="light"] .main-page .meta{color:#74747b!important}html[data-theme="light"] .main-page .summary-toggle{background:rgba(255,255,255,.66)!important;color:#222!important}.article-content .box,.article-content .article-lead,.article-view-counter{background:rgba(18,18,20,.68)!important;border:1px solid rgba(255,255,255,.12)!important;backdrop-filter:blur(6px)!important}.article-content .article-body{background:rgba(18,18,20,.58)!important}html[data-theme="light"] .article-content .box,html[data-theme="light"] .article-content .article-lead,html[data-theme="light"] .article-view-counter{background:rgba(255,255,255,.72)!important;border-color:rgba(210,210,218,.74)!important}html[data-theme="light"] .article-content .article-body{background:rgba(255,255,255,.62)!important}@media(max-width:760px){html[data-theme="light"] body{background:#fff!important}.main-page .card{grid-template-columns:88px minmax(0,1fr)!important;gap:10px!important;padding:9px!important}.main-page .thumb{width:88px!important;height:72px!important}.main-page .card-title{font-size:15px!important}.main-page .lead{font-size:12px!important}.card-featured,.card-featured:first-child{grid-template-columns:96px minmax(0,1fr)!important}.card-featured .thumb,.card-featured:first-child .thumb{width:96px!important;height:82px!important}.card-featured:first-child .card-title{font-size:17px!important}}`;
+
+const UI_817_CSS = `.main-page .card-meta-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;flex-wrap:nowrap!important}.main-page .card-meta-row .meta{flex:1 1 auto!important;min-width:0!important;margin-top:6px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}.main-page .card-meta-row .summary-toggle{flex:0 0 auto!important;margin-top:0!important;white-space:nowrap!important}`;
+
+const UI_818_CSS = `.main-page .card{background:#252529!important;border-color:rgba(255,255,255,.14)!important}.main-page .card:nth-child(even){background:#222226!important}.main-page .card-bg{opacity:.42!important;filter:saturate(.92) contrast(1.04)!important}.main-page .card-bg-shade{background:linear-gradient(90deg,rgba(18,18,20,.84) 0%,rgba(20,20,22,.76) 42%,rgba(20,20,22,.62) 100%)!important}.main-page .recommended .card,.main-page .nm-recommendations .card{background:#2a2426!important;border-color:rgba(255,92,108,.24)!important}.main-page .recommended .card:nth-child(even),.main-page .nm-recommendations .card:nth-child(even){background:#272225!important}.recommended-title-minimal{margin:0 0 15px!important;padding:0 0 11px!important;border-bottom:1px solid #343438!important}.recommended-title-minimal small{display:block!important;color:#fff!important;font-size:25px!important;font-weight:900!important;letter-spacing:-.35px!important;text-transform:none!important;line-height:1.08!important}html[data-theme="light"] .main-page .card{background:#fff!important;border-color:#dedee4!important}html[data-theme="light"] .main-page .card-bg{opacity:.18!important}html[data-theme="light"] .main-page .card-bg-shade{background:linear-gradient(90deg,rgba(255,255,255,.88) 0%,rgba(255,255,255,.78) 42%,rgba(255,255,255,.66) 100%)!important}html[data-theme="light"] .recommended-title-minimal small{color:#17171a!important}@media(max-width:760px){.main-page .card-bg{opacity:.36!important}.main-page .card-bg-shade{background:linear-gradient(90deg,rgba(18,18,20,.88),rgba(18,18,20,.66))!important}.recommended-title-minimal small{font-size:22px!important;letter-spacing:-.25px!important}html[data-theme="light"] .main-page .card-bg{opacity:.16!important}html[data-theme="light"] .main-page .card-bg-shade{background:linear-gradient(90deg,rgba(255,255,255,.90),rgba(255,255,255,.70))!important}}`;
+
+const UI_820_CSS = `.article-page .compact-reader-header{position:relative;z-index:3;max-width:900px;margin:0 auto 18px!important;min-height:58px!important;padding:0!important;border-radius:16px!important;background:rgba(16,16,18,.78)!important;border:1px solid rgba(255,255,255,.12)!important;backdrop-filter:blur(12px)!important;box-shadow:0 12px 32px rgba(0,0,0,.22)!important}.article-page .compact-reader-header .header-layout{min-height:58px!important;grid-template-columns:44px minmax(0,1fr) 44px!important;padding:0 10px!important}.minimal-wordmark{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-width:0;color:#fff;text-decoration:none;font-weight:850;font-size:clamp(16px,2.2vw,22px);letter-spacing:.02em;line-height:1}.minimal-wordmark img{width:25px;height:25px;border-radius:7px;object-fit:cover;object-position:center;box-shadow:0 3px 10px rgba(0,0,0,.28)}.reader-home{display:flex;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;text-decoration:none;font-size:20px}.home-back{display:inline-flex!important;flex-direction:column!important;align-items:center!important;gap:2px!important;line-height:1.1!important;text-align:center!important;padding:7px 10px!important;border-radius:12px!important;background:rgba(18,18,20,.58)!important;border:1px solid rgba(255,255,255,.10)!important;text-decoration:none!important}.own-share-actions{margin-top:16px;display:flex;gap:9px;flex-wrap:wrap}.fb-share-btn{font-weight:800!important}html[data-theme="light"] .article-page .compact-reader-header{background:rgba(255,255,255,.84)!important;border-color:rgba(210,210,218,.85)!important;box-shadow:0 10px 28px rgba(28,28,35,.10)!important}html[data-theme="light"] .minimal-wordmark,html[data-theme="light"] .reader-home{color:#151518!important}html[data-theme="light"] .reader-home{border-color:#d5d5dc;background:#f7f7f9}html[data-theme="light"] .home-back{background:rgba(255,255,255,.72)!important;border-color:rgba(210,210,218,.80)!important}@media(max-width:760px){.article-page .compact-reader-header{margin:0 0 14px!important;border-radius:14px!important}.article-page .compact-reader-header .header-layout{grid-template-columns:40px minmax(0,1fr) 40px!important;min-height:54px!important}.minimal-wordmark{gap:7px;font-size:clamp(14px,4.2vw,18px)}.minimal-wordmark img{width:22px;height:22px}.reader-home{width:36px;height:36px;font-size:18px}}`;
+
+const UI_821_CSS = `.nm-create-btn{position:absolute;right:70px;top:50%;transform:translateY(-50%);z-index:4;display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border:1px solid rgba(255,83,99,.50);border-radius:999px;background:rgba(255,64,80,.13);color:#ff9aa5!important;text-decoration:none!important;font-size:12px;font-weight:900;letter-spacing:.2px;white-space:nowrap}.nm-create-btn:hover{background:#ff4050;color:#fff!important;border-color:#ff4050}.reader-create-btn{right:58px;min-height:30px;padding:0 9px;font-size:11px}.card-no-image{background:linear-gradient(135deg,#29292e,#202024)!important}.card-no-image .card-bg,.card-no-image .card-bg-shade{display:none!important}.news-placeholder{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:flex-end!important;gap:4px!important;padding:10px!important;box-sizing:border-box!important;background:linear-gradient(135deg,#38383f 0%,#202026 58%,#381a20 100%)!important;border:1px solid rgba(255,255,255,.10)!important;color:#fff!important;overflow:hidden!important}.news-placeholder strong{font-size:14px;line-height:1.05;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.news-placeholder span{display:inline-block;max-width:100%;padding:3px 6px;border-radius:999px;background:rgba(255,255,255,.10);color:#d7d7db;font-size:9px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nm-own-placeholder{width:130px;height:100px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:4px;padding:10px;box-sizing:border-box;border:1px solid rgba(255,255,255,.10);border-radius:10px;background:linear-gradient(135deg,#34343a,#171719 62%,#331a20);color:#fff}.nm-own-placeholder strong{font-size:20px;letter-spacing:.5px}.nm-own-placeholder span{font-size:10px;color:#d0d0d5;font-weight:800;text-transform:uppercase}html[data-theme="light"] .nm-create-btn{background:#fff1f3;border-color:#f0b7bf;color:#c0132d!important}html[data-theme="light"] .news-placeholder,html[data-theme="light"] .nm-own-placeholder{background:linear-gradient(135deg,#f2f2f5,#fff 58%,#fff0f2)!important;border-color:#dedee4!important;color:#24242a!important}html[data-theme="light"] .news-placeholder span{background:#f1f1f4;color:#66666d}@media(max-width:760px){.nm-create-btn{right:54px;min-height:28px;padding:0 8px;font-size:10px}.reader-create-btn{right:49px}.news-placeholder strong{font-size:12px}.news-placeholder span{font-size:8px}.nm-own-placeholder{width:92px;height:78px;padding:8px}.nm-own-placeholder strong{font-size:17px}.nm-own-placeholder span{font-size:8px}}`;
+
+const UI_822_CSS = `.daily-date small{display:block;margin-top:2px;color:#aaa;font-size:11px;font-weight:800;letter-spacing:.3px}.live-match small{line-height:1.25}html[data-theme="light"] .daily-date small{color:#686870}@media(max-width:760px){.daily-date small{font-size:9px}.daily-weather,.live-match small{line-height:1.25}}`;
+
+const UI_823_CSS = `body.main-page,body.article-page,body.prompt-page,body.publish-page{padding-top:112px!important}.site-header{position:fixed!important;top:8px!important;left:50%!important;right:auto!important;z-index:1000!important;width:min(1220px,calc(100vw - 20px))!important;max-width:calc(100vw - 20px)!important;margin:0!important;transform:translateX(-50%)!important}.article-page .compact-reader-header,.prompt-page .compact-reader-header,.publish-page .compact-reader-header{max-width:1220px!important;width:min(1220px,calc(100vw - 20px))!important}.article-page .compact-reader-header .header-layout,.prompt-page .compact-reader-header .header-layout,.publish-page .compact-reader-header .header-layout{display:grid!important;grid-template-columns:54px minmax(0,1fr) 54px!important;align-items:center!important}.site-header .brand-name{text-decoration:none!important;min-width:0!important}.site-header .brand-name span{display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis}.article-page .header-search,.prompt-page .header-search,.publish-page .header-search{display:block!important}.article-content,.prompt-content,.publish-content{position:relative;z-index:1}.prompt-content,.publish-content{max-width:950px;margin:0 auto}.prompt-page .site-header,.publish-page .site-header{backdrop-filter:blur(14px)}html[data-viewport="desktop"] .site-header .brand-name{font-size:clamp(18px,1.8vw,24px)!important}html[data-viewport="tablet"] .site-header .brand-name{font-size:clamp(16px,3vw,21px)!important}html[data-viewport="phone"] .site-header .brand-name{font-size:clamp(13px,4.2vw,17px)!important}.site-menu-panel,.header-search-form{z-index:1010!important}.home-back .home-icon{display:block!important;line-height:1}.home-back span{display:block!important}@media(max-width:760px){body.main-page,body.article-page,body.prompt-page,body.publish-page{padding-top:78px!important}.site-header{top:6px!important;width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important}.article-page .compact-reader-header,.prompt-page .compact-reader-header,.publish-page .compact-reader-header{border-radius:14px!important;width:calc(100vw - 16px)!important}.article-page .compact-reader-header .header-layout,.prompt-page .compact-reader-header .header-layout,.publish-page .compact-reader-header .header-layout{grid-template-columns:40px minmax(0,1fr) 40px!important;min-height:56px!important;padding:0 9px!important;gap:7px!important}.site-header .brand-name span{max-width:calc(100vw - 140px)}.header-inline-logo{width:22px!important;height:22px!important}.header-search-form{position:fixed!important;top:72px!important;left:10px!important;right:10px!important;width:auto!important}.site-menu-panel{position:fixed!important;top:56px!important;left:10px!important;right:auto!important;width:min(292px,calc(100vw - 20px))!important}.article-content{padding-top:2px}}@media(max-width:380px){.site-header .brand-name span{max-width:calc(100vw - 128px)}.article-page .compact-reader-header .header-layout,.prompt-page .compact-reader-header .header-layout,.publish-page .compact-reader-header .header-layout{grid-template-columns:36px minmax(0,1fr) 36px!important;padding:0 7px!important}.site-menu>summary,.header-search summary{width:34px!important;height:34px!important}.header-inline-logo{width:20px!important;height:20px!important}}`;
+
+const UI_824_CSS = `.nm-own-carousel{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 12px;margin-bottom:12px;scrollbar-width:thin}.nm-own-feature-card,.nm-own-carousel .nm-own-card{position:relative;isolation:isolate;scroll-snap-align:start;overflow:hidden}.nm-own-feature-card{min-width:100%;display:grid;grid-template-columns:minmax(260px,.95fr) minmax(0,1fr);border:1px solid rgba(255,92,108,.26);border-radius:22px;background:linear-gradient(135deg,#241b1e,#151519);box-shadow:0 14px 38px rgba(0,0,0,.24)}.nm-own-carousel .nm-own-card{min-width:min(520px,88vw);background:rgba(20,20,23,.78)!important}.nm-own-bg{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;border-radius:0!important;z-index:-2!important;opacity:.34!important;filter:saturate(.9) contrast(1.05)!important}.nm-own-shade{position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(10,10,12,.88),rgba(14,14,16,.70))}.nm-own-feature-image{width:100%;height:310px;object-fit:cover}.nm-own-feature-copy{display:flex;flex-direction:column;justify-content:center;gap:9px;padding:26px;background:rgba(12,12,14,.34);backdrop-filter:blur(2px)}.nm-own-feature-copy small{color:#ff6f7d;font-size:11px;font-weight:900;letter-spacing:1px;text-transform:uppercase}.nm-own-feature-copy a{color:#fff;text-decoration:none;font-size:28px;font-weight:900;line-height:1.1;letter-spacing:-.5px}.nm-own-feature-copy p{margin:0;color:#d2d2d7;font-size:14px;line-height:1.5}.nm-own-feature-copy time{color:#aaa;font-size:12px}.nm-own-small-grid{margin-top:4px}.fb-share-btn{cursor:pointer}.home-back{width:max-content}.home-back span+span{margin-top:2px}.nm-own-label{display:block!important;width:max-content!important}.video-frame{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:14px;background:#000}.video-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.thumb-topic-fallback{filter:saturate(.9)}html[data-theme="light"] .nm-own-feature-card,html[data-theme="light"] .nm-own-carousel .nm-own-card{border-color:#dedee4;background:#fff!important;box-shadow:0 10px 26px rgba(28,28,35,.08)}html[data-theme="light"] .nm-own-shade{background:linear-gradient(90deg,rgba(255,255,255,.86),rgba(255,255,255,.62))}html[data-theme="light"] .nm-own-feature-copy{background:rgba(255,255,255,.42)}html[data-theme="light"] .nm-own-feature-copy a{color:#18181a}html[data-theme="light"] .nm-own-feature-copy p{color:#333}@media(max-width:760px){.nm-own-feature-card{grid-template-columns:1fr;min-width:92vw;border-radius:18px}.nm-own-feature-image{height:205px}.nm-own-feature-copy{padding:17px}.nm-own-feature-copy a{font-size:22px}.nm-own-carousel{margin-left:-2px;margin-right:-2px}.nm-own-small-grid{grid-template-columns:1fr!important}.nm-own-carousel .nm-own-card{min-width:88vw}}`;
+
+const UI_825_CSS = `html,body{overscroll-behavior-y:none}.main-page,.article-page,.prompt-page,.publish-page{padding-bottom:0!important}.site-footer{margin-bottom:0!important}.site-footer::after{content:"";display:block;height:0}.email-link{display:inline-flex;align-items:center;gap:9px;color:#ddd;text-decoration:none;font-size:14px;font-weight:800}.email-link:hover{color:#ff8f9a}.email-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12)}.card-read-count{position:absolute;right:9px;bottom:8px;z-index:3;display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(0,0,0,.52);color:#fff;font-size:11px;font-weight:900;line-height:1;backdrop-filter:blur(6px)}.main-page .card{padding-bottom:26px!important}html[data-theme="light"] .email-link{color:#333}html[data-theme="light"] .email-link:hover{color:#d91e3c}html[data-theme="light"] .email-icon{background:#fff;border-color:#d8d8de}html[data-theme="light"] .card-read-count{background:rgba(255,255,255,.72);border-color:rgba(210,210,218,.9);color:#17171a}@media(max-width:760px){.card-read-count{right:7px;bottom:7px;font-size:10px}.main-page .card{padding-bottom:25px!important}}`;
+
+const UI_826_CSS = `.nm-own-carousel-wrap{position:relative}.nm-carousel-btn{position:absolute;top:50%;z-index:5;display:grid;place-items:center;width:42px;height:42px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(8,8,10,.68);color:#fff;font-size:30px;line-height:1;cursor:pointer;transform:translateY(-50%);box-shadow:0 8px 22px rgba(0,0,0,.25)}.nm-carousel-prev{left:10px}.nm-carousel-next{right:10px}.nm-carousel-btn:hover{background:rgba(255,64,80,.86);border-color:rgba(255,255,255,.38)}.nm-own-carousel .nm-own-feature-card{min-width:100%!important}.nm-own-carousel .nm-own-card{display:none!important}.main-page .card:hover{transform:none!important}.main-page .card-bg,.nm-own-bg,.article-page-background img{filter:none!important}.site-header,.news-hero,.portal-stats,.daily-info-bar,.article-content .box,.article-content .article-lead,.article-view-counter,.card-read-count,.nm-own-feature-copy{backdrop-filter:none!important}.main-page .card,.nm-own-feature-card,.nm-own-card{contain:layout paint}.main-page .card-bg{opacity:.30!important}.nm-own-bg{opacity:.28!important}.card-featured,.main-page .card,.nm-own-feature-card,.nm-own-card{will-change:auto!important}html[data-theme="light"] .nm-carousel-btn{background:rgba(255,255,255,.82);border-color:#d8d8de;color:#17171a}@media(max-width:760px){.nm-carousel-btn{width:36px;height:36px;font-size:26px}.nm-carousel-prev{left:8px}.nm-carousel-next{right:8px}.main-page .card-bg{opacity:.22!important}.nm-own-bg{opacity:.22!important}}`;
+
+const UI_900_CSS = `.nm-hero-header{width:100%;padding:0;box-sizing:border-box;text-decoration:none!important}.nm-header-card{width:100%;min-height:92px;padding:14px 16px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:14px;box-sizing:border-box;background:radial-gradient(circle at 100% 50%,rgba(210,35,45,.25),transparent 34%),linear-gradient(135deg,rgba(20,20,22,.94),rgba(7,7,9,.96));border:1px solid rgba(255,80,90,.32);box-shadow:0 12px 28px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.08),0 0 18px rgba(220,40,50,.12);overflow:hidden}.nm-logo-wrap{flex:0 0 62px;width:62px;height:62px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle,rgba(255,255,255,.10),rgba(0,0,0,.35));border:1px solid rgba(255,255,255,.15);box-shadow:0 0 16px rgba(220,40,50,.22)}.nm-logo{width:52px;height:52px;object-fit:contain}.nm-title-block{min-width:0;line-height:1;text-align:left}.nm-title-script{font-family:"Brush Script MT","Segoe Script",cursive;font-size:clamp(24px,4vw,34px);color:#e0343f;font-weight:700;transform:rotate(-2deg);margin-bottom:-5px;text-shadow:0 0 11px rgba(224,52,63,.34)}.nm-title-main{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(25px,4.4vw,40px);font-weight:950;letter-spacing:-1.2px;color:#f4f4f4;text-transform:uppercase;text-shadow:0 2px 0 rgba(255,255,255,.08),0 10px 22px rgba(0,0,0,.52)}.nm-tagline{margin-top:6px;font-size:clamp(8px,1.25vw,11px);font-weight:700;letter-spacing:1.8px;color:rgba(255,255,255,.62);white-space:nowrap}.site-header .header-layout{grid-template-columns:64px minmax(0,1fr) 64px!important}.site-header .brand{justify-self:center;max-width:min(620px,100%);display:block!important}.main-page .card,.main-page .card-featured,.top-news,.quick-news,.nm-own-feature-card,.nm-own-card{background:rgba(38,38,42,.70)!important;border-color:rgba(255,255,255,.12)!important}.main-page .card-bg{display:block!important;opacity:.44!important}.main-page .card-bg-shade{background:linear-gradient(90deg,rgba(16,16,18,.78),rgba(16,16,18,.58))!important}.main-page .card-body{background:transparent!important}.card-read-count{right:6px!important;bottom:6px!important;z-index:8!important;backdrop-filter:none!important}.nm-own-feature-card .card-read-count,.nm-own-card .card-read-count{display:inline-flex!important}.nm-card-hit{position:absolute;inset:0;z-index:3;border-radius:inherit}.nm-own-feature-copy,.nm-own-feature-image,.nm-own-card>img:not(.nm-own-bg),.nm-own-card>div,.nm-own-actions,.card-read-count{position:relative;z-index:2}.nm-own-actions a,.nm-own-actions button{position:relative;z-index:4}.article-content .box,.article-content .article-lead,.article-view-counter,.nm-own-body{background:rgba(18,18,20,.52)!important;border-color:rgba(255,255,255,.10)!important;backdrop-filter:none!important}.article-end-home{margin:18px auto 0!important}.fb-share-btn{display:none!important}html[data-theme="light"] body{background:#fff!important}html[data-theme="light"] .main-page .card,html[data-theme="light"] .main-page .card-featured,html[data-theme="light"] .top-news,html[data-theme="light"] .quick-news,html[data-theme="light"] .nm-own-feature-card,html[data-theme="light"] .nm-own-card,html[data-theme="light"] .related-card{background:rgba(255,255,255,.76)!important;border-color:rgba(210,210,218,.82)!important;box-shadow:0 8px 22px rgba(28,28,35,.06)!important}html[data-theme="light"] .main-page .card-bg{opacity:.24!important}html[data-theme="light"] .main-page .card-bg-shade{background:linear-gradient(90deg,rgba(255,255,255,.82),rgba(255,255,255,.58))!important}html[data-theme="light"] .card-title,html[data-theme="light"] .nm-own-feature-copy a,html[data-theme="light"] .nm-own-card a{color:#151518!important}html[data-theme="light"] .lead,html[data-theme="light"] .nm-own-feature-copy p,html[data-theme="light"] .nm-own-card p{color:#3f3f46!important}html[data-theme="light"] .article-content .box,html[data-theme="light"] .article-content .article-lead,html[data-theme="light"] .article-view-counter,html[data-theme="light"] .nm-own-body{background:rgba(255,255,255,.62)!important;border-color:rgba(210,210,218,.70)!important}html[data-theme="light"] .site-header{background:transparent!important;border-color:transparent!important;box-shadow:none!important}@media(max-width:760px){body.main-page,body.article-page,body.prompt-page,body.publish-page{padding-top:128px!important}.site-header{top:0!important;width:100%!important;max-width:100%!important;border-radius:0!important;background:transparent!important;border:0!important;box-shadow:none!important}.site-header .header-layout{display:block!important;min-height:0!important;padding:14px 14px 10px!important}.site-header .site-menu,.site-header .header-search,.site-header .nm-create-btn{display:none!important}.site-header .brand{max-width:100%!important}.nm-header-card{min-height:118px;padding:18px;border-radius:28px;gap:16px}.nm-logo-wrap{flex-basis:76px;width:76px;height:76px}.nm-logo{width:62px;height:62px}.nm-title-script{font-size:clamp(30px,9vw,42px)}.nm-title-main{font-size:clamp(31px,9.5vw,48px);letter-spacing:-1.6px}.nm-tagline{font-size:clamp(9px,2.5vw,12px);letter-spacing:2.4px}.daily-info-bar{margin-top:8px!important}.main-page .card-bg{opacity:.34!important}.article-content .box,.article-content .article-lead,.article-view-counter,.nm-own-body{background:rgba(18,18,20,.46)!important}html[data-theme="light"] .article-content .box,html[data-theme="light"] .article-content .article-lead,html[data-theme="light"] .article-view-counter,html[data-theme="light"] .nm-own-body{background:rgba(255,255,255,.58)!important}}@media(max-width:380px){.nm-header-card{min-height:108px;padding:16px 14px;gap:12px;border-radius:24px}.nm-logo-wrap{flex-basis:62px;width:62px;height:62px}.nm-logo{width:52px;height:52px}.nm-title-main{letter-spacing:-1.2px}.nm-tagline{letter-spacing:1.5px}}`;
+
+const AUDIO_CSS = `.audio-box{margin:24px 0;padding:18px;border-radius:18px;background:linear-gradient(135deg,#111,#1f1f1f);color:#fff;border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 28px rgba(0,0,0,.22)}.audio-label{display:inline-block;font-size:13px;font-weight:800;background:#b00020;color:#fff;padding:5px 10px;border-radius:999px;margin-bottom:8px}.audio-title{font-size:20px;font-weight:900;margin-bottom:4px}.audio-meta{font-size:14px;opacity:.75;margin-bottom:12px}.audio-box audio{width:100%;margin:8px 0 10px}.audio-box p{margin:8px 0 0;font-size:15px;line-height:1.5;opacity:.9}.audio-list-content{max-width:1120px;margin:0 auto}.audio-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.audio-card{border-radius:20px;overflow:hidden;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.08);margin-bottom:20px}.audio-card a{color:inherit;text-decoration:none}.audio-cover-wrap{position:relative;overflow:hidden}.audio-cover-wrap img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover}.audio-cover-overlay{position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}.audio-play{width:58px;height:58px;border-radius:999px;background:rgba(255,255,255,.92);color:#111;display:flex;align-items:center;justify-content:center;font-size:26px;padding-left:4px}.audio-cover-badge{position:absolute;left:14px;top:14px;background:#b00020;color:#fff;border-radius:999px;padding:6px 11px;font-size:12px;font-weight:900}.audio-card-body{padding:16px}.audio-card-body h2{font-size:20px;margin:0 0 8px;line-height:1.16}.audio-card-body p{font-size:15px;line-height:1.5;opacity:.85}.audio-card-body small{font-weight:900;color:#b00020}.audio-hero h1{margin:8px 0;color:#fff;font-size:clamp(30px,5vw,48px)}html[data-theme="light"] .audio-box{background:rgba(255,255,255,.78);color:#151518;border-color:rgba(210,210,218,.82)}html[data-theme="light"] .audio-card{background:rgba(255,255,255,.82)}html[data-theme="light"] .audio-hero h1{color:#151518}@media(max-width:900px){.audio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.audio-grid{grid-template-columns:1fr}.audio-list-content{padding:0 10px}.audio-card-body h2{font-size:18px}}`;
+
+const ARTICLE_COUNTER_850_CSS = `
+.article-view-counter{position:relative;z-index:2;margin:22px 0 0;padding:14px 16px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(18,18,20,.86);color:#bbb;text-align:center;font-size:14px;backdrop-filter:blur(8px)}.article-view-counter strong{color:#fff;font-size:17px}`;
+
+const MAIN_CSS = `
+body{background:#111;color:#fff;font-family:Arial,sans-serif;max-width:1100px;margin:auto;padding:20px}h1{color:#ff4040;margin:0 0 8px}.site-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.view-switch{color:#ddd;border:1px solid #444;border-radius:10px;padding:9px 12px;text-decoration:none;font-size:13px;white-space:nowrap}.view-switch:hover{border-color:#ff4040;color:#ff8080}.version{color:#888;font-size:13px}.subtitle{color:#ccc;margin:14px 0 20px}.search-box{display:flex;gap:8px;background:#1c1c1c;border:1px solid #333;border-radius:12px;padding:10px;margin-bottom:16px}.search-box input{min-width:0;flex:1;padding:11px;border-radius:9px;border:1px solid #444;background:#111;color:#fff;font-size:15px}.search-box button{padding:10px 14px;border:0;border-radius:9px;background:#ff4040;color:#fff;font-weight:bold;cursor:pointer}.stats{display:flex;flex-wrap:wrap;gap:6px 18px;background:#1c1c1c;border:1px solid #333;border-radius:12px;padding:11px 13px;margin-bottom:20px;color:#ddd;font-size:13px;line-height:1.5}.stats strong{color:#ff4040}.recommended{background:linear-gradient(135deg,#2a1111,#1c1c1c);border:1px solid #ff4040;padding:14px;border-radius:14px;margin-bottom:24px}.recommended-title{color:#ff4040;font-size:23px;font-weight:bold;margin-bottom:10px}.category{margin-top:28px}.category-title{color:#ff4040;border-bottom:1px solid #333;padding-bottom:7px;font-size:22px}.source-title{color:#ddd;font-size:16px;margin-top:16px}.card{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px;background:#1c1c1c;padding:11px;margin:8px 0;border-radius:11px;overflow:hidden}.recommended .card{background:#261616}.thumb{width:112px;height:84px;object-fit:cover;border-radius:8px;background:#222}.thumb-placeholder{display:flex;align-items:center;justify-content:center;color:#666;font-weight:bold}.card-body{min-width:0}.card-title{color:#fff;text-decoration:none;font-size:17px;font-weight:bold;display:block;line-height:1.25;word-break:break-word}.card-title:hover{color:#ff4040}.lead{color:#bbb;font-size:13px;line-height:1.35;margin:6px 0 0}.meta{color:#999;font-size:12px;margin-top:6px}.score{color:#ffb3b3;font-size:12px;margin-top:5px}.badges,.actions{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}.badge{font-size:10px;font-weight:bold;padding:4px 6px;border-radius:999px}.badge-cikk{background:#123d22;color:#74ff9b;border:1px solid #35c46b}.badge-high{background:#3d1a1a;color:#ff9a9a;border:1px solid #ff4040}.badge-investigative{background:#322111;color:#ffd27a;border:1px solid #d99a2b}.action-btn{display:inline-block;font-size:11px;font-weight:bold;padding:6px 8px;border-radius:8px;text-decoration:none;background:#262626;color:#fff;border:1px solid #444}.action-btn:hover{background:#ff4040;border-color:#ff4040}.error{background:#2a1111;color:#ff8080;padding:12px;border-radius:10px;margin:10px 0}.small-note{color:#aaa;font-size:12px}@media(max-width:600px){body{padding:12px}.site-header{display:block}.view-switch{display:inline-block;margin-top:8px}.subtitle{font-size:14px}.search-box{padding:8px}.recommended{padding:10px}.recommended-title{font-size:20px}.category-title{font-size:20px}.card{grid-template-columns:88px minmax(0,1fr);gap:10px;padding:9px}.thumb{width:88px;height:72px}.card-title{font-size:15px}.lead{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.stats{display:block}.stats>div+div{margin-top:3px}}`;
+
+const ARTICLE_CSS = `
+body{background:#111;color:#fff;font-family:Arial,sans-serif;max-width:900px;margin:auto;padding:20px}h1{color:#ff4040;line-height:1.15}.back{color:#ddd;text-decoration:none}.box{background:#1c1c1c;border-radius:14px;padding:20px;margin-top:20px}.meta{color:#aaa;margin-bottom:15px}.btn{display:inline-block;background:#ff4040;color:#fff;padding:10px 14px;text-decoration:none;border:0;border-radius:10px;margin:6px 6px 6px 0;font-weight:bold;cursor:pointer}.btn-secondary{background:#262626;border:1px solid #444}.hero{width:100%;max-height:420px;object-fit:cover;border-radius:14px;margin:18px 0;background:#222}.article-lead{color:#ddd;font-size:18px;line-height:1.6;background:#1c1c1c;border-left:4px solid #ff4040;border-radius:10px;padding:16px}.tags{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}.tag{background:#262626;border:1px solid #444;color:#ddd;border-radius:999px;padding:6px 10px;font-size:13px;font-weight:bold}.related-card{display:flex;gap:12px;background:#161616;border:1px solid #333;border-radius:12px;padding:12px;margin:10px 0}.related-thumb{width:90px;height:62px;object-fit:cover;border-radius:8px;background:#222;flex-shrink:0}.related-card a{color:#fff;text-decoration:none;font-weight:bold;line-height:1.3;display:block}.related-card a:hover{color:#ff4040}.related-meta{color:#999;font-size:13px;margin-top:6px}`;
+
+const PROMPT_CSS = `
+body{background:#111;color:#fff;font-family:Arial,sans-serif;max-width:950px;margin:auto;padding:20px}h1{color:#ff4040}.box{background:#1c1c1c;border:1px solid #333;border-radius:16px;padding:18px;margin:18px 0}.meta{color:#aaa;line-height:1.6;word-break:break-word}.meta a{color:#ff8080}textarea{width:100%;height:520px;box-sizing:border-box;background:#0b0b0b;color:#fff;border:1px solid #444;border-radius:12px;padding:16px;font-size:15px;line-height:1.5}.btn{display:inline-block;background:#ff4040;color:#fff;text-decoration:none;font-weight:bold;padding:10px 14px;border-radius:10px;margin:6px 6px 6px 0;border:0;cursor:pointer}.btn-secondary{background:#262626;border:1px solid #444}.notice{color:#bbb;font-size:14px;margin:10px 0}`;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
